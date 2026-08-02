@@ -705,6 +705,86 @@ def test_the_never_null_lookup_is_not_used_to_ask_whether_something_exists():
     assert "$(" in body and "find(" in body, "both helpers are still in use"
 
 
+# --------------------------------------------------------------------------- #
+# help text
+#
+# A control whose effect you have to guess is a control you leave alone. These
+# tests make an undocumented one a failure here rather than a mystery in the UI.
+# --------------------------------------------------------------------------- #
+
+def help_entries(js: str) -> dict[str, str]:
+    """The HELP map from app.js, as {control id: its text}. Parsed rather than
+    executed, so this stays a plain text test."""
+    import re
+
+    block = js.split("const HELP = {", 1)[1]
+    depth, end = 1, 0
+    for i, char in enumerate(block):
+        depth += (char == "{") - (char == "}")
+        if depth == 0:
+            end = i
+            break
+    body = block[:end]
+    entries = {}
+    # Tolerant of line endings: this file is served as it sits on disk, and git
+    # may have given it CRLF on the way there.
+    for match in re.finditer(r'"([\w-]+)":\s*\[(.*?)\]\s*,', body, re.S):
+        entries[match.group(1)] = match.group(2)
+    return entries
+
+
+def documented_controls(html: str) -> set[str]:
+    """Every control a user can change, minus the ones that explain themselves."""
+    import re
+
+    ids = set(re.findall(r'<(?:input|select|textarea)[^>]*\bid="([\w-]+)"', html))
+    # Not settings: navigation, and text boxes whose label is the whole story.
+    return ids - {
+        "drive-select", "tune-job", "opt-translate-target", "auto-lang",
+        "key-google", "key-deepl", "ext-text",
+    }
+
+
+def test_every_control_says_what_it_does(client):
+    js = client.get("/static/app.js").text
+    html = client.get("/").text
+    missing = documented_controls(html) - set(help_entries(js))
+    assert not missing, f"no help text for: {sorted(missing)}"
+
+
+def test_help_for_a_checkbox_covers_both_states(client):
+    """"What does this do" for a checkbox is "what is different when it is on"."""
+    import re
+
+    js = client.get("/static/app.js").text
+    html = client.get("/").text
+    entries = help_entries(js)
+    checkboxes = re.findall(r'<input[^>]*type="checkbox"[^>]*\bid="([\w-]+)"', html)
+    assert checkboxes, "no checkboxes found — the pattern must have changed"
+    for box in checkboxes:
+        text = entries.get(box)
+        if text is None:
+            continue
+        assert "On —" in text and "Off —" in text, f"{box} does not contrast on with off"
+
+
+def test_help_for_a_slider_covers_both_extremes(client):
+    """A slider you can only understand by moving it is a slider you leave alone."""
+    import re
+
+    js = client.get("/static/app.js").text
+    entries = help_entries(js)
+    spec = re.findall(r'key: "([\w_]+)", min: (-?[\d.]+), max: (-?[\d.]+)', js)
+    assert len(spec) >= 7, spec
+    for key, low, high in spec:
+        text = entries.get(f"t-{key}")
+        assert text, f"slider {key} has no help"
+        for end in (low, high):
+            number = end.rstrip("0").rstrip(".") if "." in end else end
+            assert number in text or number.lstrip("-") in text, \
+                f"slider {key} does not say what happens at {end}"
+
+
 def test_the_page_offers_to_forget_and_says_what_that_deletes(client):
     """A privacy control nobody can find is not a privacy control."""
     body = client.get("/").text

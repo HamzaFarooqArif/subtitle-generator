@@ -116,6 +116,289 @@ $("#toast").addEventListener("click", () => {
   $("#toast").className = "toast";
 });
 
+/* ====================================================================== help
+
+   Every control carries a "?" that says what it does in the terms that matter:
+   for a checkbox, what differs between on and off; for a slider, what happens at
+   each end. The hint under a field has to stay one line to keep the panel
+   readable, which is not enough room for "what happens if I turn this on".
+
+   Text lives in HELP, keyed by the control's id, so a new control that nobody
+   documented is a test failure rather than a mystery in the UI.               */
+
+const HELP = {
+  /* ---------------------------------------------------------- picking files */
+  "opt-recursive": [
+    "Whether folder mode looks inside subfolders.",
+    "On — every video underneath this folder, at any depth. A “Trip 2019” folder with a subfolder per day is done in one run.",
+    "Off — only the videos sitting directly in this folder.",
+  ],
+
+  /* ------------------------------------------------------- what to transcribe */
+  "opt-profile": [
+    "How much unclear audio to keep. The single biggest lever on the result.",
+    "home-video — strict. Levels out handheld audio and drops what looks like noise or hallucination.",
+    "music — for anything sung. Voice detection is trained on speech and threw away all but 0.7 seconds of a 239-second song; this profile turns it off.",
+    "verbatim — keeps almost everything and lets you delete by hand. Reach for it when subtitles are missing things you know were said.",
+  ],
+  "opt-language": [
+    "The spoken language, or leave it to detection.",
+    "Detect automatically — right nearly always, and the only safe choice for a file that switches language.",
+    "Pinning one — use only when the whole file is that language and detection keeps getting it wrong. Pinning German on an English/German recording dropped the English half: 54% of the audio covered instead of 84%.",
+  ],
+  "opt-hotwords": [
+    "Names the model has no way to guess, given to it before it decodes.",
+    "People, places, pets, in-jokes — comma-separated. e.g. “Thomas, Oaxaca, Kreuzberg”.",
+    "The cheapest accuracy win available: without it, an unusual name becomes whichever common word sounds nearest.",
+  ],
+  "opt-romanize": [
+    "A second subtitle file with Indic scripts written in Latin letters.",
+    "On — you get clip.hi.srt and clip.hi-Latn.srt; नमस्ते also appears as “namaste”.",
+    "Off — the original script only.",
+    "For a language you speak but do not read. Indic scripts only.",
+  ],
+  "opt-translate-mode": [
+    "Whether to also produce subtitles in another language.",
+    "No — transcribe only, and nothing leaves this machine.",
+    "DeepL / Google — the transcript is sent to that service. Both are free up to 500,000 characters a month, roughly 300 files the length of a 25-minute video.",
+    "Offline model — stays on this machine, noticeably rougher. Good enough to follow a conversation, not to publish.",
+  ],
+  "opt-translate-target": [
+    "The language to translate into.",
+    "Languages the chosen engine cannot reach are shown greyed out rather than hidden, so you can see why one is missing.",
+  ],
+  "opt-translate-engine": [
+    "Which offline model does the work.",
+    "Automatic — text translation, falling back to Whisper for languages it handles better.",
+    "NLLB (text) — translates the transcript. Fast, and the usual choice.",
+    "Whisper (audio) — decodes the audio straight into English. Sometimes better on unclear speech, but English only.",
+  ],
+  "opt-translate-remember": [
+    "Turns the choice above into the standing rule for every run.",
+    "On — every file not already in the target language is translated, without asking.",
+    "Off — this run only.",
+    "Saved to settings.local.yaml, so it survives restarts.",
+  ],
+
+  /* -------------------------------------------------------- more settings */
+  "opt-model": [
+    "Which Whisper model transcribes.",
+    "large-v3 — the right default: most accurate, ~3.1 GB of VRAM.",
+    "large-v3-turbo — 3–5× faster, and it degrades on exactly the difficult audio this tool is for.",
+    "large-v3-int8 — less VRAM, some accuracy given up.",
+  ],
+  "opt-batch": [
+    "How many audio windows the GPU decodes at once.",
+    "1 — slowest, least memory. Drop to this if you run out of VRAM.",
+    "8 — the default, and comfortable on an 8 GB card.",
+    "32 — fastest on a large card, and the first thing to blame for an out-of-memory error.",
+  ],
+  "opt-beam": [
+    "How many alternative transcriptions are considered before picking one.",
+    "1 — greedy: fastest, more mistakes on unclear speech.",
+    "5 — the default. Slower per file, steadier on difficult audio.",
+    "10 — diminishing returns; rarely worth the time.",
+  ],
+  "fmt-srt": [
+    "The subtitle format nearly everything reads.",
+    "On — writes clip.en.srt beside the video. VLC, Plex, Premiere and YouTube all take it.",
+    "Off — no .srt. Leave it on unless you specifically want only .vtt.",
+  ],
+  "fmt-vtt": [
+    "The web subtitle format.",
+    "On — also writes clip.en.vtt, for HTML <video> and some web players.",
+    "Off — the default. Beside a video file it is a second copy of the same subtitles.",
+  ],
+  "opt-outdir": [
+    "Where finished subtitles are written.",
+    "Blank — next to each source video, which is where players look for them.",
+    "A path — everything lands there instead, keeping the video folders untouched.",
+  ],
+  "opt-keep-suppressed": [
+    "What to do with text the gate judged to be noise rather than speech.",
+    "Off — it is dropped. Breathing, room noise and repeated “ah” do not become subtitles.",
+    "On — it is kept and marked, so you can see what was being removed. An auditing tool, not a normal setting: on a 27-minute file it added back 51% more segments, most of them wrong.",
+  ],
+  "opt-overwrite": [
+    "Whether files that already have subtitles are done again.",
+    "Off — they are skipped, which is what makes an interrupted batch resumable.",
+    "On — everything is transcribed again from scratch, replacing the subtitles beside it. Use after changing the profile or the model.",
+  ],
+
+  /* ------------------------------------------------------ one file's settings */
+  "f-profile": [
+    "The profile for this one file, whatever the other tab says.",
+    "The reason this exists: two songs in a folder of handheld video want music, and nothing else does.",
+  ],
+  "f-language": [
+    "The language of this one file.",
+    "“Detect automatically” is worth choosing explicitly here: it lets this file be detected while All files stays pinned to a language.",
+  ],
+  "f-hotwords": [
+    "Names in this file, replacing the list on the other tab rather than adding to it.",
+    "Blank follows All files. e.g. the names of the people in this one recording.",
+  ],
+  "f-romanize": [
+    "Latin-script subtitles for this file.",
+    "Yes — also writes the hi-Latn file. No — never, even if All files says yes. That is the case a checkbox could not express.",
+  ],
+  "f-translate": [
+    "Translation for this file only.",
+    "“No translation” is the useful one: the clip that is already in English, in a folder where everything else is being translated into it.",
+  ],
+  "f-translate-target": [
+    "The language this file is translated into.",
+    "e.g. everything else goes to English, but the German clips should also exist in Spanish for one side of the family.",
+  ],
+
+  /* ----------------------------------------------------------- translate tab */
+  "auto-provider": [
+    "Which service translates this transcript.",
+    "Only the ones you have a key for can be picked. DeepL is usually better on idiom and slang; Google reaches more languages.",
+  ],
+  "auto-lang": [
+    "The language to translate this transcript into.",
+    "The transcript is sent as one numbered document rather than line by line, so the translator can see the conversation and not just the cue.",
+  ],
+  "key-deepl-plan": [
+    "Which DeepL API you signed up for. They are different addresses, and a key only works against its own.",
+    "Free — the key ends in “:fx”. This is the plan almost everyone has.",
+    "Pro — a paid account, billed per character.",
+  ],
+  "ext-lang": [
+    "The language of the text you are pasting back in.",
+    "It names the output file: “es” produces clip.es.srt.",
+  ],
+  "ext-input": [
+    "The translated text, pasted back from wherever you translated it.",
+    "Keep the numbering: “1. …” on its own line per cue is how each line finds its way back to the right subtitle. Lines that do not match are reported rather than guessed at.",
+    "This is the route that needs no API key and no account.",
+  ],
+
+  /* ------------------------------------------------------------- tune gate */
+  "tune-job": [
+    "Which transcript the sliders are tried against.",
+    "Everything here re-runs from the stored transcript: no GPU, no re-transcription, and the subtitle files are not touched until you save.",
+  ],
+  "t-min_mean_word_prob": [
+    "How sure the model must be, on average, for a line to be kept.",
+    "0 — keeps everything, including confident-sounding nonsense.",
+    "1 — keeps almost nothing.",
+    "The first knob to relax when real speech is being cut. Default 0.35.",
+  ],
+  "t-hard_no_speech_prob": [
+    "The point at which “this is probably not speech at all” overrides everything else.",
+    "0 — almost every segment is thrown out.",
+    "1 — this check never fires, and music or breathing can become text.",
+    "Raise it to keep more.",
+  ],
+  "t-hard_avg_logprob": [
+    "A confidence floor per segment, on a log scale, where less negative means surer.",
+    "0 — nothing survives.",
+    "−3 — the check effectively stops firing and everything survives.",
+    "Lower keeps more.",
+  ],
+  "t-max_compression_ratio": [
+    "Catches the model looping — “thank you thank you thank you”.",
+    "1 — extremely strict; ordinary repetition is treated as a loop.",
+    "5 — the detector is off in practice.",
+    "Raise it if a chorus or a genuinely repetitive speaker is being removed.",
+  ],
+  "t-min_words_per_second": [
+    "Catches a few words smeared over a long stretch of nothing.",
+    "0 — the check never fires.",
+    "2 — anything slower than fast speech is suspect, which is far too strict.",
+    "A caption spanning thirty seconds of wind with four words in it is what this removes.",
+  ],
+  "t-max_chars_per_line": [
+    "How wide a subtitle line may be.",
+    "20 — very short lines, so more of them and more line breaks.",
+    "60 — long lines that run off a phone screen.",
+    "42 is the broadcast norm and the default.",
+  ],
+  "t-target_cps": [
+    "Reading speed, in characters per second, used to decide how long a subtitle stays up.",
+    "8 — slow: cues linger, and busy dialogue starts overlapping.",
+    "25 — fast: cues vanish before most people finish reading.",
+    "17 is the usual adult figure and the default.",
+  ],
+};
+
+/**
+ * Attach the "?" markers. Idempotent, because parts of the page are rebuilt.
+ */
+function installHelp() {
+  for (const id of Object.keys(HELP)) {
+    const control = find(`#${CSS.escape(id)}`);
+    if (!control || find(`[data-help-for="${id}"]`)) continue;
+    // Prefer the control's label: it is where the eye already is.
+    const label = find(`label[for="${CSS.escape(id)}"]`) || control.closest("label");
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "help";
+    marker.dataset.helpFor = id;
+    marker.textContent = "?";
+    marker.setAttribute("aria-label", `What does this do?`);
+    (label || control.parentElement).insertBefore(
+      marker, label ? null : control.nextSibling);
+  }
+}
+
+let tipFor = null;
+
+function showHelp(marker) {
+  const lines = HELP[marker.dataset.helpFor];
+  if (!lines) return;
+  const tip = $("#tip");
+  tip.innerHTML = lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+  tip.classList.add("show");
+  tipFor = marker;
+
+  // Beside the marker, flipped or nudged to stay on screen.
+  const at = marker.getBoundingClientRect();
+  const box = tip.getBoundingClientRect();
+  const left = Math.min(Math.max(8, at.left - 8), window.innerWidth - box.width - 8);
+  const below = at.bottom + 8;
+  const fits = below + box.height < window.innerHeight - 8;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${fits ? below : Math.max(8, at.top - box.height - 8)}px`;
+}
+
+function hideHelp() {
+  $("#tip").classList.remove("show");
+  tipFor = null;
+}
+
+// Hover for the mouse, focus for the keyboard, click for touch and for anyone
+// who wants it to stay put while they read it.
+document.addEventListener("mouseover", (event) => {
+  const marker = event.target.closest?.(".help");
+  if (marker && marker !== tipFor) showHelp(marker);
+});
+document.addEventListener("mouseout", (event) => {
+  const marker = event.target.closest?.(".help");
+  if (marker && marker === tipFor && !marker.matches(":focus")) hideHelp();
+});
+document.addEventListener("focusin", (event) => {
+  const marker = event.target.closest?.(".help");
+  if (marker) showHelp(marker);
+});
+document.addEventListener("focusout", (event) => {
+  if (event.target.closest?.(".help") === tipFor) hideHelp();
+});
+document.addEventListener("click", (event) => {
+  const marker = event.target.closest?.(".help");
+  if (marker) {
+    event.preventDefault();
+    return tipFor === marker ? hideHelp() : showHelp(marker);
+  }
+  if (tipFor) hideHelp();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && tipFor) hideHelp();
+});
+window.addEventListener("scroll", () => { if (tipFor) hideHelp(); }, true);
+
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
@@ -1860,6 +2143,7 @@ function buildTuneControls(defaults) {
       <p class="hint">${spec.hint}</p>
     </div>`;
   }).join("");
+  installHelp();   // the sliders only exist now
 }
 
 $("#tune-controls").addEventListener("input", (event) => {
@@ -1982,6 +2266,7 @@ async function boot() {
       toast(`${label} failed to load: ${err.message}`, "error");
     }
   }
+  installHelp();   // after the steps: some controls only exist once they run
   connectEvents();
 }
 

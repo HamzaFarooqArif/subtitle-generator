@@ -38,6 +38,11 @@ they already are, so nothing is copied and gigabyte files never touch the wire.
 
 Three tabs:
 
+Every control carries a **?** that says what it does in the terms that decide it:
+for a checkbox, what is different when it is on; for a slider, what happens at
+each end; with a worked example where one helps. Hover, focus it with the
+keyboard, or click to pin it. A control with no help text fails the test suite.
+
 **Subtitles** — browse to your files, set the profile / language / hotwords, and
 submit. Jobs run one at a time on a single GPU worker (the model loads once and
 stays loaded between jobs), with live per-stage progress streamed over SSE.
