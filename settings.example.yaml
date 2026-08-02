@@ -60,10 +60,11 @@ defaults:
   # Which second script.
   #   latin  <lang>-Latn.srt — नमस्ते -> namaste, Тихо -> Tikho.
   #          Indic scripts and Cyrillic.
-  #   urdu   <lang>-Arab.srt — नमस्ते -> نمستے. Hindi only: Hindi and Urdu are
-  #          one spoken language with two alphabets. Perso-Arabic spelling is
-  #          taken from a built-in word list, so a word outside it comes out
-  #          sounding right and spelled naively.
+  #   urdu   <lang>-Arab.srt — नमस्ते -> نمستے. Hindi and Punjabi: the two
+  #          languages already written in two alphabets (Hindi as Urdu, Punjabi
+  #          as Shahmukhi). Perso-Arabic spelling is taken from a built-in word
+  #          list, so a word outside it comes out sounding right and spelled
+  #          naively.
   #   both   each of the above, where it applies.
   romanize_script: latin
 

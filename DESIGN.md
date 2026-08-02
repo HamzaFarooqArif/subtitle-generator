@@ -460,6 +460,22 @@ by definition. The linguistically harder pair is the easier program. They are no
 shipped because "readable" is doing a lot of work there and nobody actually reads
 Russian in Urdu letters.
 
+**The qualification for being in this module** is therefore not "the script
+converts" — Marathi and Nepali convert perfectly well — but *"speakers of this
+language already read that alphabet"*. Two languages pass:
+
+| | source | target | why |
+|---|---|---|---|
+| Hindi | Devanagari | Urdu | one spoken language, two alphabets |
+| Punjabi | Gurmukhi | Shahmukhi | same, split by a border rather than by speech |
+
+Punjabi needed its own tables (a different Unicode block), its own word list, and
+its own future tense (`-ਾਂਗਾ` → `اں گا`) — but the *shape* transferred exactly,
+which is the argument for the shape. Two rules generalised out of it during the
+port and improved Hindi too: a non-initial vowel needs a hamza seat (गई is گئی,
+not گی) and a short vowel that carries a following vowel has to be written after
+all (हुई is ہوئی, not ہئی).
+
 ### 4.12 The cache is a record, so forgetting is a feature
 
 `work/<content-id>/` exists for performance: it is what makes `reformat`,

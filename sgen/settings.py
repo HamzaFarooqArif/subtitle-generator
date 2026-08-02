@@ -336,8 +336,9 @@ defaults:
   hotwords: ""
   romanize: false
   # latin writes <lang>-Latn.srt (नमस्ते -> namaste) for Indic scripts and
-  # Cyrillic. urdu writes <lang>-Arab.srt and is Hindi only — Hindi and Urdu are
-  # one language in two alphabets. both writes each where it applies.
+  # Cyrillic. urdu writes <lang>-Arab.srt for Hindi and Punjabi — the two
+  # languages already written in two alphabets, as Urdu and as Shahmukhi.
+  # both writes each where it applies.
   romanize_script: latin   # latin | urdu | both
   keep_suppressed: false
   formats: [srt]

@@ -111,9 +111,11 @@ def write_urdu(
     language: str,
     encoding: str = "utf-8-sig",
 ) -> list[Path]:
-    """Write Urdu-script copies as `<name>.<lang>-Arab.<ext>`.
+    """Write Perso-Arabic copies as `<name>.<lang>-Arab.<ext>`.
 
-    Hindi only, and empty for anything else — see `sgen.urdu`.
+    Hindi becomes Urdu and Punjabi becomes Shahmukhi; empty for anything else,
+    because those are the languages whose speakers read that alphabet. See
+    `sgen.urdu`.
     """
     from . import urdu
 
@@ -124,7 +126,7 @@ def write_urdu(
         Cue(
             start=cue.start,
             end=cue.end,
-            lines=urdu.convert_lines(cue.lines),
+            lines=urdu.convert_lines(cue.lines, language),
             warnings=list(cue.warnings),
         )
         for cue in cues
@@ -136,7 +138,7 @@ def write_urdu(
 # What each choice is called, for the sentence explaining why it did nothing.
 _SCRIPT_NAMES = {
     "latin": ("Latin-script", "Indic scripts and Cyrillic"),
-    "urdu": ("Urdu-script", "Hindi"),
+    "urdu": ("Urdu-script", "Hindi and Punjabi"),
 }
 
 

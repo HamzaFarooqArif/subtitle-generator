@@ -59,7 +59,7 @@ HEADER = """\
 # language:         auto detects; or a code like hi, de, ru
 # hotwords:         names in this file, comma-separated
 # romanize:         true also writes a second script (नमस्ते -> namaste)
-# romanize_script:  latin | urdu | both — urdu is Hindi only (نمستے)
+# romanize_script:  latin | urdu | both — urdu covers Hindi and Punjabi (نمستے)
 # translate:        none | deepl | google | local
 # translate_target: language code, default en
 """

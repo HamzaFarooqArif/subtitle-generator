@@ -158,8 +158,9 @@ class Config:
     # language but don't read the script it is written in.
     romanize: bool = False
     # Which second script. "latin" is <lang>-Latn.srt (नमस्ते -> "namaste") and
-    # works for Indic scripts and Cyrillic. "urdu" is <lang>-Arab.srt and is
-    # Hindi only — Hindi and Urdu are one language in two alphabets.
+    # works for Indic scripts and Cyrillic. "urdu" is <lang>-Arab.srt, for the
+    # two languages already written in two alphabets: Hindi as Urdu, Punjabi as
+    # Shahmukhi.
     romanize_script: Literal["latin", "urdu", "both"] = "latin"
     # Also write translated subtitles.
     translate_to_english: bool = False

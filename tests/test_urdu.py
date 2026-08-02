@@ -87,13 +87,81 @@ def test_english_words_and_numbers_pass_through():
     assert urdu.convert("Hello दोस्त 2019") == "Hello دوست 2019"
 
 
-def test_only_hindi_is_offered():
-    """Marathi in Urdu script would be a curiosity; Punjabi's Shahmukhi is a
-    different script block and not implemented."""
+def test_only_the_two_languages_written_in_two_alphabets():
+    """Marathi is also Devanagari and would convert mechanically, but nobody
+    reads Marathi in Urdu letters — and the word list and future rule are Hindi.
+    """
     assert urdu.supported("hi")
+    assert urdu.supported("pa")
     assert not urdu.supported("mr")
+    assert not urdu.supported("ne")
     assert not urdu.supported("ru")
     assert not urdu.supported(None)
+
+
+def test_a_vowel_after_a_vowel_takes_a_hamza_seat():
+    """Without this the two vowels merge into one letter and the word loses a
+    syllable: हुई reads as "hi" rather than "hui"."""
+    assert urdu.convert("हुई") == "ہوئی"
+    assert urdu.convert("आई") == "آئی"
+    assert urdu.convert("गई") == "گئی"
+    assert urdu.convert("गाओ") == "گاؤ"
+
+
+# --------------------------------------------------------------------------- #
+# Punjabi (Gurmukhi -> Shahmukhi)
+#
+# The same relationship as Hindi/Urdu, split by a border rather than by speech.
+# --------------------------------------------------------------------------- #
+
+PUNJABI_LINES = [
+    ("ਮੇਰਾ ਨਾਮ ਰਾਮ ਹੈ", "میرا نام رام ہے"),
+    ("ਮੈਂ ਤੇਰਾ ਬਣ ਜਾਵਾਂਗਾ", "میں تیرا بن جاواں گا"),
+    ("ਸੱਚ ਕਹਾਂ ਤਾਂ ਖ਼ੁਦਾ ਦੀ ਕਸਮ", "سچ کہاں تاں خدا دی قسم"),
+    ("ਤੂੰ ਮੇਰੀ ਜ਼ਿੰਦਗੀ ਹੈ", "توں میری زندگی ہے"),
+    ("ਰਾਤ ਦੀ ਹਵਾ ਵਿੱਚ ਯਾਦ ਆਈ", "رات دی ہوا وچ یاد آئی"),
+]
+
+
+@pytest.mark.parametrize("punjabi,expected", PUNJABI_LINES)
+def test_known_punjabi_lines(punjabi, expected):
+    assert urdu.convert(punjabi, "pa") == expected
+
+
+def test_the_punjabi_future_tense_also_splits():
+    """Punjabi's -ਾਂਗਾ is Shahmukhi's اں گا, two words, same as Urdu."""
+    assert urdu.convert("ਜਾਵਾਂਗਾ", "pa") == "جاواں گا"
+    assert urdu.convert("ਕਰਾਂਗੀ", "pa") == "کراں گی"
+
+
+def test_the_addak_is_not_written():
+    """It marks a short vowel by doubling the consonant; Shahmukhi writes the
+    letter once. ਗੱਲ is گل."""
+    assert urdu.convert("ਗੱਲ", "pa") == "گل"
+    assert urdu.convert("ਹੱਸਦੇ", "pa") == "ہسدے"
+
+
+def test_punjabi_loanwords_come_from_the_list():
+    assert urdu.convert("ਹੱਕ", "pa") == "حق"
+    assert urdu.convert("ਤਕਦੀਰਾਂ", "pa") == "تقدیراں"
+    assert urdu.convert("ਇਸ਼ਕ", "pa") == "عشق"
+
+
+def test_gurmukhi_is_untouched_when_hindi_is_asked_for():
+    """Each language reads its own script: pointing the Hindi tables at Gurmukhi
+    must not half-convert it."""
+    assert urdu.convert("ਮੇਰਾ ਨਾਮ", "hi") == "ਮੇਰਾ ਨਾਮ"
+    assert urdu.convert("मेरा नाम", "pa") == "मेरा नाम"
+
+
+def test_punjabi_is_written_as_pa_arab(tmp_path):
+    from sgen.cues import Cue
+    from sgen.write import write_urdu
+
+    cues = [Cue(start=1.0, end=3.0, lines=["ਮੈਂ ਤੇਰਾ ਬਣ ਜਾਵਾਂਗਾ"])]
+    paths = write_urdu(cues, tmp_path / "song", ["srt"], "pa")
+    assert [p.name for p in paths] == ["song.pa-Arab.srt"]
+    assert "میں تیرا بن جاواں گا" in paths[0].read_text(encoding="utf-8-sig")
 
 
 def test_empty_input_is_safe():

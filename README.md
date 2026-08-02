@@ -437,20 +437,32 @@ song.hi-Arab.srt   خیریت پوچھو کبھی تو کیفیت پوچھو
 Gujarati, Odia, Tamil, Telugu, Kannada, Malayalam, Sinhala, and Cyrillic
 (Russian, Ukrainian, Belarusian, Bulgarian, Serbian, Macedonian).
 
-**Urdu** is Hindi only, because Hindi and Urdu are one spoken language with two
-alphabets — [sgen/urdu.py](sgen/urdu.py). It is the harder direction, and the
-reason is worth knowing before you trust the output:
+**Urdu / Shahmukhi** covers **Hindi and Punjabi** — [sgen/urdu.py](sgen/urdu.py).
+Both are languages already written in two alphabets, split by a border rather
+than by speech: Hindi in Devanagari is Urdu in Perso-Arabic, Punjabi in Gurmukhi
+is Punjabi in Shahmukhi. That is the whole qualification for being here, which is
+why Marathi and Nepali are not: they are also Devanagari, and nobody reads them
+in Urdu letters.
+
+It is the harder direction, and the reason is worth knowing before you trust the
+output:
 
 > Devanagari → Latin is many-to-one and safe. Devanagari → Urdu is one-to-many
 > and guesses. Urdu keeps Perso-Arabic spelling for Perso-Arabic words — /z/ is
 > ز, ذ, ض or ظ by etymology — and Devanagari collapsed all of that centuries
 > ago. Going back needs a lexicon, not a table.
 
-So there is a built-in word list for the vocabulary a table cannot reach (`حق`,
-not `ہک`) and a rule for the future tense, which Urdu writes as two words with a
-nasal (जाऊँगा → `جاؤں گا`) where Devanagari joins it. A word outside the list
-comes out sounding right and spelled naively. Good enough to read along with; not
-something to publish.
+So each language gets a built-in word list for the vocabulary a table cannot
+reach (`حق`, not `ہک`), a rule for the future tense — written as two words with a
+nasal (जाऊँगा → `جاؤں گا`, ਜਾਵਾਂਗਾ → `جاواں گا`) where both source scripts join it
+— and vowel-cluster rules for the hamza seat (ਹੋਈ → `ہوئی`, not `ہوی`). A word
+outside the list comes out sounding right and spelled naively. Good enough to
+read along with; not something to publish.
+
+```
+ਮੈਂ ਤੇਰਾ ਬਣ ਜਾਵਾਂਗਾ            →  میں تیرا بن جاواں گا
+ਸੱਚ ਕਹਾਂ ਤਾਂ ਖ਼ੁਦਾ ਦੀ ਕਸਮ       →  سچ کہاں تاں خدا دی قسم
+```
 
 Asking for a script a language has no converter for is **reported on the job**,
 in the CLI and in the sidecar — never silently ignored.

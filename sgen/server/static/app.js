@@ -160,9 +160,9 @@ const HELP = {
   "opt-romanize-script": [
     "Which alphabet the second file is written in.",
     "Latin — namaste, Tikho. Works for Indic scripts and Cyrillic, and is the one to pick if you are unsure.",
-    "Urdu — نمستے. Hindi only, because Hindi and Urdu are one spoken language with two alphabets. Written clip.hi-Arab.srt.",
+    "Urdu — نمستے. Hindi and Punjabi only, because those are the languages already written in two alphabets: Hindi as Urdu, Punjabi as Shahmukhi. Written clip.hi-Arab.srt.",
     "Both — writes each file where it applies.",
-    "Urdu spelling is a guess for Perso-Arabic words: منزل is right, but a word outside the built-in list comes out sounding right and spelled naively. Fine for reading along, not for publishing.",
+    "Perso-Arabic spelling is a guess for words of Persian or Arabic origin: منزل is right, but a word outside the built-in list comes out sounding right and spelled naively. Fine for reading along, not for publishing.",
   ],
   "opt-translate-mode": [
     "Whether to also produce subtitles in another language.",
@@ -1226,7 +1226,7 @@ const TRANSLATE_LABELS = {
   local: "offline model",
 };
 
-const SCRIPT_LABELS = { latin: "Latin", urdu: "Urdu", both: "both" };
+const SCRIPT_LABELS = { latin: "Latin", urdu: "Urdu / Shahmukhi", both: "both" };
 
 /**
  * Fill the tab from the file's saved settings, with every control offering the
