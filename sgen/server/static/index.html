@@ -88,7 +88,7 @@
       <!-- One file's settings belong in the settings panel, not squeezed into a
            row of the list. The second tab appears when a file is opened. -->
       <div class="settings-tabs" role="tablist">
-        <button class="stab active" id="tab-global" type="button">All files</button>
+        <button class="stab active" id="tab-global" type="button">Global settings</button>
         <button class="stab hidden" id="tab-file" type="button">
           <span id="tab-file-name">this file</span>
           <span class="stab-count hidden" id="tab-file-count"></span>
@@ -232,7 +232,7 @@
       <div id="settings-file" class="hidden">
         <p class="hint">
           For <strong id="file-settings-name"></strong> only. Everything left on
-          <em>as in All files</em> follows the other tab, so this stays as short
+          <em>as in Global settings</em> follows the other tab, so this stays as short
           as the exceptions really are.
         </p>
 
@@ -282,7 +282,7 @@
         <div class="inline file-actions">
           <button class="btn primary" id="btn-file-save" disabled>Save</button>
           <button class="btn ghost tiny hidden" id="btn-file-revert">Discard changes</button>
-          <button class="btn ghost tiny" id="btn-file-clear">Use the All files settings</button>
+          <button class="btn ghost tiny" id="btn-file-clear">Use the global settings</button>
         </div>
         <p class="hint" id="file-settings-status"></p>
 
@@ -291,7 +291,7 @@
           asked before leaving with unsaved changes. Stored in
           <code id="file-settings-path">sgen.folder.yaml</code> beside the videos.
           Model, output formats and output folder are properties of the run, not
-          of one video, so they stay on <strong>All files</strong>.
+          of one video, so they stay on <strong>Global settings</strong>.
         </p>
       </div>
 

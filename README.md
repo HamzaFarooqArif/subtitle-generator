@@ -84,7 +84,7 @@ files and says so; `--no-resume` redoes everything.
 **Settings for one file.** A folder is rarely uniform: two files are songs, one
 is already in English, one wants Latin-script output. Each row in the scan has a
 **Settings…** button that opens that file on a second tab of the settings panel —
-the same controls, each offering *as in All files (…)* so an override is visibly
+the same controls, each offering *as in Global settings (…)* so an override is visibly
 an exception rather than a separate set of settings. Anything left inherited
 follows the first tab.
 
@@ -106,10 +106,10 @@ files:
   "beach 2019.mp4":
     translate: none        # already English
   "interview.mp4":
-    language: auto         # detect this one, even though All files pins German
+    language: auto         # detect this one, even though Global settings pins German
 ```
 
-`Reset N files to All files` in the scan's action row deletes the lot.
+`Reset N files to global settings` in the scan's action row deletes the lot.
 
 **Translate** — every transcript you have, each with a Translate button:
 Google or DeepL if you have a key, or the paste-it-yourself round trip if you

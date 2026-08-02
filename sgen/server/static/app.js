@@ -232,15 +232,15 @@ const HELP = {
   ],
   "f-language": [
     "The language of this one file.",
-    "“Detect automatically” is worth choosing explicitly here: it lets this file be detected while All files stays pinned to a language.",
+    "“Detect automatically” is worth choosing explicitly here: it lets this file be detected while Global settings stays pinned to a language.",
   ],
   "f-hotwords": [
     "Names in this file, replacing the list on the other tab rather than adding to it.",
-    "Blank follows All files. e.g. the names of the people in this one recording.",
+    "Blank follows Global settings. e.g. the names of the people in this one recording.",
   ],
   "f-romanize": [
     "Latin-script subtitles for this file.",
-    "Yes — also writes the hi-Latn file. No — never, even if All files says yes. That is the case a checkbox could not express.",
+    "Yes — also writes the hi-Latn file. No — never, even if Global settings says yes. That is the case a checkbox could not express.",
   ],
   "f-translate": [
     "Translation for this file only.",
@@ -1026,7 +1026,7 @@ function resetButtonHtml(scan) {
   const custom = scan.files.filter((f) => Object.keys(f.overrides || {}).length).length;
   return custom
     ? `<button class="btn ghost tiny" id="btn-reset-overrides">
-         Reset ${custom} file${custom === 1 ? "" : "s"} to All files</button>`
+         Reset ${custom} file${custom === 1 ? "" : "s"} to global settings</button>`
     : "";
 }
 
@@ -1114,7 +1114,7 @@ async function setOverride(path, values) {
  * enough to reach only half of what can vary per file, and it put the same
  * decision in two places that looked nothing like each other. Here they are the
  * same controls in the same panel as everything else, each one able to say "as
- * in All files" — which is what an override actually is.
+ * in Global settings" — which is what an override actually is.
  */
 $("#scan-detail").addEventListener("click", (event) => {
   const open = event.target.closest("[data-open-settings]");
@@ -1130,7 +1130,8 @@ $("#tab-global").addEventListener("click", () => {
 });
 $("#tab-file").addEventListener("click", () => showSettingsTab("file"));
 
-// "as in All files (music)" has to keep telling the truth when All files changes.
+// "as in Global settings (music)" has to keep telling the truth when the other
+// tab changes.
 $("#settings-global").addEventListener("change", () => {
   if (state.fileSettings) renderFileSettings();
 });
@@ -1206,7 +1207,7 @@ const TRANSLATE_LABELS = {
 
 /**
  * Fill the tab from the file's saved settings, with every control offering the
- * inherited value by name — "as in All files (music)" says what will happen if
+ * inherited value by name — "as in Global settings (music)" says what will happen if
  * you leave it alone, which a blank option does not.
  */
 function renderFileSettings() {
@@ -1216,7 +1217,7 @@ function renderFileSettings() {
   // While there are unsaved edits, the form shows those — a re-scan or a change
   // on the other tab must not quietly undo what you were in the middle of.
   const own = state.fileDirty ? fileSettingValues() : saved;
-  const inherit = (label) => `as in All files (${label})`;
+  const inherit = (label) => `as in Global settings (${label})`;
 
   $("#file-settings-name").textContent = file.name;
   $("#tab-file-name").textContent = file.name;
@@ -1228,7 +1229,7 @@ function renderFileSettings() {
     ...(state.meta?.profiles || []).map((p) => [p, p]),
   ], own.profile || "");
 
-  // "auto" is storable, so a file can be detected even when All files pins a
+  // "auto" is storable, so a file can be detected even when Global settings pins a
   // language. An empty value cannot be stored, so it has to mean "inherit".
   fillSelect($("#f-language"), [
     ["", inherit(langName($("#opt-language").value))],
@@ -1239,7 +1240,7 @@ function renderFileSettings() {
   // Assign only on a change: this re-renders while you are still typing.
   set($("#f-hotwords"), "value", own.hotwords || "");
   set($("#f-hotwords"), "placeholder",
-      `as in All files (${$("#opt-hotwords").value.trim() || "none"})`);
+      `as in Global settings (${$("#opt-hotwords").value.trim() || "none"})`);
 
   fillSelect($("#f-romanize"), [
     ["", inherit($("#opt-romanize").checked ? "yes" : "no")],
@@ -1266,7 +1267,7 @@ function renderFileSettings() {
   $("#f-translate-opts").style.display = mode === "none" ? "none" : "";
   $("#f-profile-hint").textContent = PROFILE_HINTS[own.profile || $("#opt-profile").value] || "";
   $("#f-translate-hint").textContent = own.translate === "none"
-    ? "This file is left in its own language, whatever All files says."
+    ? "This file is left in its own language, whatever Global settings says."
     : "";
   $("#file-settings-path").textContent = state.scan?.config_file || "sgen.folder.yaml";
   updateFileSaveState();
@@ -1290,7 +1291,7 @@ function updateFileSaveState() {
 
   $("#file-settings-status").textContent = dirty
     ? "Not saved yet — Save applies these, Discard puts them back."
-    : (savedNames ? `Saved: ${savedNames}.` : "Nothing set here — this file follows All files.");
+    : (savedNames ? `Saved: ${savedNames}.` : "Nothing set here — this file follows Global settings.");
   $("#file-settings-status").classList.toggle("warn-text", dirty);
 }
 
@@ -1360,7 +1361,7 @@ async function saveFileSettings() {
     state.fileDirty = false;
     toast(Object.keys(values).length
       ? `Saved: ${ownNames(values)}.`
-      : "Saved — this file follows All files.", "ok");
+      : "Saved — this file follows Global settings.", "ok");
   }
   renderFileSettings();
 }
@@ -1371,13 +1372,13 @@ $("#btn-file-revert").addEventListener("click", () => {
   toast("Changes discarded.", "");
 });
 
-// Puts every control back to "as in All files" — as an edit, not as a write.
+// Puts every control back to "as in Global settings" — as an edit, not as a write.
 // Everything on this tab now goes through Save, including undoing everything.
 $("#btn-file-clear").addEventListener("click", () => {
   if (!state.fileSettings) return;
   for (const control of $$("#settings-file [data-file-setting]")) control.value = "";
   noteFileEdit();
-  if (!state.fileDirty) toast("Already following All files.", "");
+  if (!state.fileDirty) toast("Already following Global settings.", "");
 });
 
 /**
@@ -1385,7 +1386,7 @@ $("#btn-file-clear").addEventListener("click", () => {
  *
  * Two clicks, because it throws away choices that took effort to make. The
  * button states the count both times, so "reset 12" is never mistaken for
- * "reset the one I am looking at" — and the tab's own "Use the All files
+ * "reset the one I am looking at" — and the tab's own "Use the global
  * settings" is still there when only one file went wrong.
  */
 $("#scan-detail").addEventListener("click", async (event) => {
@@ -1402,7 +1403,7 @@ $("#scan-detail").addEventListener("click", async (event) => {
       body: JSON.stringify({ folder: state.cwd.path }),
     });
     toast(res.cleared
-      ? `${res.cleared} file${res.cleared === 1 ? "" : "s"} back on the All files settings.`
+      ? `${res.cleared} file${res.cleared === 1 ? "" : "s"} back on the global settings.`
       : "Nothing to reset.", "ok");
     await scanFolder({ quiet: true });
   } catch (err) {
