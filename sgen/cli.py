@@ -546,6 +546,78 @@ def stop(
 
 
 @app.command()
+def forget(
+    which: Optional[list[str]] = typer.Argument(
+        None, help="Content ids to forget. Omit to list what is cached."
+    ),
+    all_: bool = typer.Option(False, "--all", help="Forget everything."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask."),
+) -> None:
+    """Delete cached transcripts and audio for transcribed files.
+
+    Everything the UI lists as already transcribed lives in `work/`: the
+    transcript, which contains the full text of what was said, and the extracted
+    audio. For home video that is a private record, so it has to be removable
+    without opening a browser or knowing which folder to delete.
+
+    The subtitle files next to the videos are never touched.
+    """
+    _force_utf8_output()
+    from . import library
+    from .config import WORK_DIR
+
+    entries = library.entries(WORK_DIR)
+    if not which and not all_:
+        if not entries:
+            console.print("[dim]Nothing cached.[/]")
+            return
+        total = sum(e.size for e in entries)
+        for entry in entries:
+            console.print(
+                f"{entry.content_id}  {_size(entry.size):>9}  "
+                f"{entry.language or '?':<4} {entry.name}"
+            )
+        console.print(
+            f"\n[dim]{len(entries)} cached, {_size(total)} in {WORK_DIR}. "
+            f"Forget one with[/] sgen forget <id>[dim], or all of them with[/] "
+            "sgen forget --all"
+        )
+        return
+
+    if all_:
+        if not yes and not typer.confirm(
+            f"Delete {len(entries)} cached transcripts and their audio?"
+        ):
+            raise typer.Abort()
+        result = library.forget_all(WORK_DIR)
+        console.print(
+            f"[green]forgot[/] {result['removed']} entries, "
+            f"{_size(result['freed'])} freed"
+        )
+        for name in result["kept"]:
+            console.print(f"[yellow]kept[/] {name} (still in use)")
+        return
+
+    for content_id in which or []:
+        try:
+            result = library.forget(WORK_DIR, content_id)
+        except library.LibraryError as exc:
+            console.print(f"[red]{exc}[/]")
+            continue
+        console.print(
+            f"[green]forgot[/] {result['name']} ({_size(result['freed'])} freed)"
+        )
+
+
+def _size(num: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if num < 1024 or unit == "GB":
+            return f"{num:.0f} {unit}" if unit == "B" else f"{num:.1f} {unit}"
+        num /= 1024.0
+    return f"{num:.1f} GB"
+
+
+@app.command()
 def config(
     init: bool = typer.Option(
         False, "--init", help="Create settings.local.yaml from the template."

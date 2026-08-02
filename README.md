@@ -129,6 +129,27 @@ default, since beside a video file it is a second copy of the same subtitles.
 translation all read from it, so changing subtitle style never means paying for
 another transcription pass.
 
+### Forgetting a file
+
+That cache is also a record: the sidecar holds the full text of what was said and
+the path it came from, and `audio.16k.wav` holds the audio itself. For personal
+footage that matters, so it is removable without knowing which folder to open.
+
+On the **Translate** tab each file has a **Forget** button (two clicks, since the
+transcript cost GPU time and the source may be gone), plus **Forget everything**
+for the whole cache. From the terminal:
+
+```powershell
+python -m sgen forget                 # what is cached, how big, and its ids
+python -m sgen forget 06f677d0590710db
+python -m sgen forget --all
+```
+
+Both delete `work/<id>/` — transcript, audio and any hand edits. **Your subtitle
+files, next to the video, are left alone**: they are what you came here for.
+`--all` also clears folders left by runs that never finished, which hold extracted
+audio but appear in no list.
+
 ## Profiles
 
 | Profile | For | Key difference |
@@ -448,7 +469,7 @@ the gating and normalization stages exist to handle.
 
 ## Status
 
-**Working, and exercised on real footage** (337 tests, 9 of them end-to-end):
+**Working, and exercised on real footage** (436 tests, 9 of them end-to-end):
 
 - probe and audio-track selection, extraction with `speechnorm` levelling
 - per-file language detection, with a no-VAD retry when speech detection rejects
@@ -465,6 +486,8 @@ the gating and normalization stages exist to handle.
 - local web UI: file browser, queue with live per-stage progress over SSE, a
   library read from sidecars so nothing becomes unreachable after a restart, and
   gate-threshold tuning that rebuilds cues without touching the GPU
+- forgetting a file: deleting the cached transcript and audio from the UI or the
+  CLI, without touching the subtitles that were asked for
 - batch processing with the model loaded once per run
 
 **Not built:**

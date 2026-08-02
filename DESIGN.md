@@ -421,6 +421,33 @@ they are not conservatism, they are the largest input this model survives.
 Improving local translation therefore means replacing the model with a
 document-capable one, not reshaping its requests.
 
+### 4.11 The cache is a record, so forgetting is a feature
+
+`work/<content-id>/` exists for performance: it is what makes `reformat`,
+retiming and translation free, and what lets a re-added file skip the GPU
+entirely. But look at what is in it. `transcript.sgen.json` contains the full text
+of everything said in the room and the absolute path it was said in;
+`audio.16k.wav` contains the audio. For the material this pipeline is aimed at —
+home recordings of identifiable people — that is a more sensitive artifact than
+the subtitles it was built from.
+
+Two consequences shape the design.
+
+**Deleting an entry is a first-class action, not a documented folder path.** It is
+a button on every row in the UI and a `sgen forget` command, because a privacy
+control that requires knowing the layout of the project directory is a privacy
+control most people will never use.
+
+**Forgetting stops at the cache.** It deletes `work/<id>/` and nothing else: the
+`.srt` next to the video was explicitly asked for, and deleting the thing someone
+came here to produce in the name of privacy would be a worse surprise than
+leaving the cache. The split is "what the app kept for itself" versus "what the
+user asked for".
+
+`--all` additionally clears folders from runs that never finished. Those hold
+extracted audio with no sidecar, so they appear in no list — which makes them
+exactly the thing a privacy sweep must not miss.
+
 ---
 
 ## 5. VRAM budget on 8 GB

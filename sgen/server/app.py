@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import settings
+from .. import library, settings
 from ..config import WORK_DIR, Config, enforce_offline
 from .jobs import Job, JobQueue, cloud_provider, build_config
 
@@ -575,7 +575,7 @@ def create_app() -> FastAPI:
         return {"written": [str(p) for p in written], "cue_count": len(cues)}
 
     @app.get("/api/library")
-    def library(limit: int = 300) -> dict[str, Any]:
+    def library_index(limit: int = 300) -> dict[str, Any]:
         """Every transcript on disk, newest first.
 
         The job queue is in-memory, so restarting the server used to lose track
@@ -583,28 +583,30 @@ def create_app() -> FastAPI:
         which only appears on a finished file. The sidecars persist, so the
         library is read from them instead of from queue state.
         """
-        items: list[dict[str, Any]] = []
-        if WORK_DIR.exists():
-            for sidecar in WORK_DIR.glob("*/transcript.sgen.json"):
-                try:
-                    data = json.loads(sidecar.read_text(encoding="utf-8"))
-                    source = data.get("source", {})
-                except (OSError, json.JSONDecodeError, KeyError):
-                    continue
-                if not data.get("cues"):
-                    continue
-                items.append({
-                    "content_id": sidecar.parent.name,
-                    "name": source.get("name") or sidecar.parent.name,
-                    "path": source.get("path", ""),
-                    "language": data.get("language"),
-                    "cue_count": len(data.get("cues", [])),
-                    "duration": data.get("audio_duration") or 0,
-                    "modified": sidecar.stat().st_mtime,
-                    "source_exists": bool(source.get("path")) and Path(source["path"]).exists(),
-                })
-        items.sort(key=lambda i: -i["modified"])
-        return {"items": items[:limit]}
+        items = [e.to_dict() for e in library.entries(WORK_DIR, limit)]
+        return {"items": items, "bytes": sum(i["size"] for i in items)}
+
+    @app.delete("/api/library/{content_id}")
+    def library_forget(content_id: str) -> dict[str, Any]:
+        """Forget one file: delete the transcript and audio the app cached.
+
+        The subtitle files next to the video are left alone — they are what the
+        user came here for. This removes the copy the app kept.
+        """
+        try:
+            result = library.forget(WORK_DIR, content_id, queue.active_paths())
+        except library.LibraryError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"ok": True, **result}
+
+    @app.post("/api/library/forget-all")
+    def library_forget_all() -> dict[str, Any]:
+        """Forget everything, including runs that never finished.
+
+        An interrupted transcription leaves extracted audio with no sidecar: not
+        listed anywhere, still a recording of someone.
+        """
+        return {"ok": True, **library.forget_all(WORK_DIR, queue.active_paths())}
 
     # --------------------------------------------- online translation (opt-in)
 

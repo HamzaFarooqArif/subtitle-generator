@@ -583,6 +583,112 @@ def test_profile_roundtrip_preserves_file(client):
 
 
 # --------------------------------------------------------------------------- #
+# forgetting a transcript
+#
+# On a throwaway work folder, never the module-scoped client: these tests delete
+# what they find, and what the real one would find is the user's own footage.
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture
+def private(tmp_path, monkeypatch):
+    """A server whose cache is a temp folder holding one transcript."""
+    from sgen import library
+    from sgen.server import app as server_app
+
+    work = tmp_path / "work"
+    folder = work / "aaaa1111"
+    folder.mkdir(parents=True)
+    source = tmp_path / "private party.mp4"
+    source.write_bytes(b"x")
+    (folder / library.SIDECAR_NAME).write_text(json.dumps({
+        "source": {"path": str(source), "name": source.name, "content_id": "aaaa1111"},
+        "language": "de",
+        "audio_duration": 60.0,
+        "cues": [{"start": 0, "end": 1, "lines": ["something said out loud"]}],
+    }), encoding="utf-8")
+    (folder / library.AUDIO_NAME).write_bytes(b"\0" * 4096)
+
+    monkeypatch.setattr(server_app, "WORK_DIR", work)
+    with TestClient(server_app.create_app()) as c:
+        yield c, work, source
+
+
+def test_the_list_says_how_much_disk_it_is_using(private):
+    client, _, _ = private
+    body = client.get("/api/library").json()
+    assert body["items"][0]["size"] > 4000
+    assert body["bytes"] == body["items"][0]["size"], \
+        "the total is what makes forgetting look worth doing"
+
+
+def test_forgetting_a_file_removes_its_transcript_and_audio(private):
+    client, work, source = private
+    res = client.delete("/api/library/aaaa1111")
+
+    assert res.status_code == 200
+    assert res.json()["name"] == "private party.mp4"
+    assert res.json()["freed"] > 4000
+    assert not (work / "aaaa1111").exists()
+    assert client.get("/api/library").json()["items"] == []
+    assert source.exists(), "the video itself is not ours to delete"
+
+
+def test_forgetting_leaves_the_subtitles_that_were_asked_for(private):
+    client, _, source = private
+    subtitle = source.with_suffix(".srt")
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
+
+    client.delete("/api/library/aaaa1111")
+    assert subtitle.exists()
+
+
+def test_forgetting_an_unknown_id_is_a_conflict_not_a_crash(private):
+    client, _, _ = private
+    res = client.delete("/api/library/bbbb2222")
+    assert res.status_code == 409
+    assert "forget" in res.json()["detail"]
+
+
+@pytest.mark.parametrize("bad", ["..", "..%2F..", "a%2Fb"])
+def test_the_id_cannot_point_outside_the_work_folder(private, bad):
+    client, work, _ = private
+    res = client.delete(f"/api/library/{bad}")
+    assert res.status_code in (404, 409), res.text
+    assert (work / "aaaa1111").exists()
+
+
+def test_forget_all_empties_the_cache(private):
+    client, work, _ = private
+    res = client.post("/api/library/forget-all").json()
+    assert res["removed"] == 1 and res["freed"] > 4000
+    assert client.get("/api/library").json()["items"] == []
+    assert not (work / "aaaa1111").exists()
+
+
+def test_a_queued_file_is_not_forgotten_under_the_worker(private, monkeypatch):
+    """A running job still needs its work folder."""
+    client, work, source = private
+    monkeypatch.setattr(
+        client.app.state.queue, "active_paths", lambda: [str(source)]
+    )
+    res = client.delete("/api/library/aaaa1111")
+    assert res.status_code == 409
+    assert "being transcribed" in res.json()["detail"]
+    assert (work / "aaaa1111").exists()
+
+    kept = client.post("/api/library/forget-all").json()
+    assert kept["removed"] == 0 and kept["kept"] == ["private party.mp4"]
+
+
+def test_the_page_offers_to_forget_and_says_what_that_deletes(client):
+    """A privacy control nobody can find is not a privacy control."""
+    body = client.get("/").text
+    assert 'id="btn-forget-all"' in body
+    assert "Forget" in body
+    assert "subtitle files" in body, "it must be clear the .srt files survive"
+
+
+# --------------------------------------------------------------------------- #
 # regate — needs a real sidecar from a prior run
 # --------------------------------------------------------------------------- #
 

@@ -698,21 +698,8 @@ $("#scan-detail").addEventListener("click", async (event) => {
   const btn = event.target.closest("#btn-reset-overrides");
   if (!btn) return;
 
-  if (btn.dataset.confirming !== "yes") {
-    btn.dataset.confirming = "yes";
-    const original = btn.textContent;
-    btn.textContent = `Really reset all ${btn.textContent.match(/\d+/)?.[0] || ""}?`;
-    btn.classList.add("danger");
-    // Reverts on its own: a destructive button left armed is a trap.
-    setTimeout(() => {
-      if (btn.dataset.confirming === "yes") {
-        btn.dataset.confirming = "";
-        btn.textContent = original;
-        btn.classList.remove("danger");
-      }
-    }, 4000);
-    return;
-  }
+  const count = btn.textContent.match(/\d+/)?.[0] || "";
+  if (!arm(btn, `Really reset all ${count}?`)) return;
 
   btn.disabled = true;
   try {
@@ -727,6 +714,7 @@ $("#scan-detail").addEventListener("click", async (event) => {
   } catch (err) {
     toast(`Could not reset: ${err.message}`, "error");
     btn.disabled = false;
+    disarm(btn);
   }
 });
 
@@ -1034,6 +1022,7 @@ async function loadLibrary() {
     return;
   }
   state.library = items;
+  renderLibraryNote(items);
 
   // Anything already showing as a live job doesn't need repeating here.
   const live = new Set(Array.from(state.jobs.values()).map((j) => j.content_id).filter(Boolean));
@@ -1057,20 +1046,19 @@ async function loadLibrary() {
         ${missing}
         <button class="btn tiny" data-translate="${item.content_id}"
           data-name="${escapeHtml(item.name)}">Translate…</button>
+        ${forgetButton(item)}
       </div>
       <div class="job-detail">
         <span>${escapeHtml(item.language || "?")}</span>
         <span>${item.cue_count} subtitles</span>
         ${mins ? `<span>${mins}</span>` : ""}
+        ${item.size ? `<span>${fmtSize(item.size)} cached</span>` : ""}
       </div>
     </div>`;
   }).join("");
 }
 
-$("#library").addEventListener("click", (event) => {
-  const contentId = event.target.dataset.translate;
-  if (contentId) openTranslate(contentId, event.target.dataset.name || "");
-});
+$("#library").addEventListener("click", libraryClick);
 
 /**
  * The same list, on the Translate tab.
@@ -1094,19 +1082,116 @@ function renderTranslatePicker(items) {
         <span class="job-name" title="${escapeHtml(item.path)}">${escapeHtml(item.name)}</span>
         <button class="btn tiny primary" data-translate="${item.content_id}"
           data-name="${escapeHtml(item.name)}">Translate…</button>
+        ${forgetButton(item)}
       </div>
       <div class="job-detail">
         <span>${escapeHtml(item.language || "?")}</span>
         <span>${item.cue_count} subtitles</span>
         ${item.duration ? `<span>${Math.round(item.duration / 60)} min</span>` : ""}
+        ${item.size ? `<span>${fmtSize(item.size)} cached</span>` : ""}
       </div>
     </div>`).join("");
 }
 
-$("#translate-picker").addEventListener("click", (event) => {
-  const contentId = event.target.dataset.translate;
-  if (contentId) openTranslate(contentId, event.target.dataset.name || "");
+$("#translate-picker").addEventListener("click", libraryClick);
+
+/* ------------------------------------------------------------------ forgetting
+
+   The list is a record of private footage: the sidecar holds the full text of
+   what was said and the path it came from, and the WAV holds the audio. Deleting
+   it needs to be a button here, not an explanation of which folder to open.     */
+
+function forgetButton(item) {
+  return `<button class="btn ghost tiny" data-forget="${item.content_id}"
+    data-name="${escapeHtml(item.name)}"
+    title="Delete the cached transcript and audio for this file">Forget</button>`;
+}
+
+/** Both lists share this: Translate… on one button, Forget on the other. */
+function libraryClick(event) {
+  const button = event.target.closest("button");
+  if (!button) return;
+  if (button.dataset.translate) {
+    openTranslate(button.dataset.translate, button.dataset.name || "");
+  } else if (button.dataset.forget) {
+    forgetFile(button);
+  }
+}
+
+/**
+ * Two clicks, because it destroys a transcript that took GPU minutes to make
+ * and cannot be rebuilt without the source file — which may itself be gone.
+ */
+async function forgetFile(button) {
+  if (!arm(button, "Delete transcript?")) return;
+  button.disabled = true;
+  try {
+    const res = await api(`/api/library/${encodeURIComponent(button.dataset.forget)}`,
+                          { method: "DELETE" });
+    toast(`Forgot ${res.name}${res.freed ? ` — ${fmtSize(res.freed)} freed` : ""}.`, "ok");
+    await loadLibrary();
+  } catch (err) {
+    toast(`Could not forget it: ${err.message}`, "error");
+    button.disabled = false;
+    disarm(button);
+  }
+}
+
+$("#btn-forget-all").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const count = state.library?.length || 0;
+  if (!arm(button, `Delete all ${count} transcripts?`)) return;
+  button.disabled = true;
+  try {
+    const res = await api("/api/library/forget-all", { method: "POST" });
+    const freed = res.freed ? ` — ${fmtSize(res.freed)} freed` : "";
+    toast(res.removed
+      ? `Forgot ${res.removed} file${res.removed === 1 ? "" : "s"}${freed}.`
+      : "Nothing cached to forget.", "ok");
+    if (res.kept?.length) {
+      toast(`Still in use, kept: ${res.kept.join(", ")}`, "error");
+    }
+    await loadLibrary();
+  } catch (err) {
+    toast(`Could not clear the cache: ${err.message}`, "error");
+  } finally {
+    button.disabled = false;
+    disarm(button);
+  }
 });
+
+/** How much of your disk this list is, so "forget" has a visible payoff. */
+function renderLibraryNote(items) {
+  const note = $("#library-note");
+  const bytes = items.reduce((sum, i) => sum + (i.size || 0), 0);
+  note.textContent = items.length
+    ? `${items.length} transcript${items.length === 1 ? "" : "s"} cached in work/, ${fmtSize(bytes)}.`
+    : "";
+  $("#btn-forget-all").classList.toggle("hidden", !items.length);
+}
+
+/* ------------------------------------------------------- two-click confirming
+
+   Same shape everywhere something destructive is one click away: the first click
+   states what will happen, and the button disarms itself after four seconds,
+   because a button left armed is a trap for whoever comes back to it.          */
+
+function arm(button, question) {
+  if (button.dataset.confirming === "yes") return true;
+  button.dataset.confirming = "yes";
+  button.dataset.label = button.textContent;
+  button.textContent = question;
+  button.classList.add("danger");
+  setTimeout(() => disarm(button), 4000);
+  return false;
+}
+
+function disarm(button) {
+  if (button.dataset.confirming !== "yes") return;
+  button.dataset.confirming = "";
+  button.textContent = button.dataset.label || button.textContent;
+  button.classList.remove("danger");
+}
 
 /* ======================================================= translate via Google */
 

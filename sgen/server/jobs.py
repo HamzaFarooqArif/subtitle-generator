@@ -155,6 +155,19 @@ class JobQueue:
                 return True
             return False
 
+    def active_paths(self) -> list[str]:
+        """Sources of jobs not yet finished.
+
+        Their work folders are in use: deleting one mid-run would fail the job
+        with a confusing error somewhere deep in the pipeline.
+        """
+        with self._lock:
+            return [
+                str(self._jobs[i].source)
+                for i in self._order
+                if self._jobs[i].status in ("queued", "running")
+            ]
+
     def clear_finished(self) -> int:
         with self._lock:
             remove = [

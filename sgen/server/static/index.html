@@ -255,7 +255,17 @@
   <div class="columns">
     <div class="panel wide">
       <h3>Which file?</h3>
+      <div class="panel-actions">
+        <button class="btn ghost tiny hidden" id="btn-forget-all">Forget everything</button>
+      </div>
+      <p class="hint" id="library-note"></p>
       <div id="translate-picker"><p class="muted">Loading…</p></div>
+      <p class="hint">
+        This list is not a database — it is read from <code>work/</code>, where
+        each file's transcript and extracted audio are cached. <strong>Forget</strong>
+        deletes that cache, including the text of what was said. Your subtitle
+        files, next to the video, are left alone.
+      </p>
     </div>
 
     <div class="panel wide hidden" id="translate-panel">
