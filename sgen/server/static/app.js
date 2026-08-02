@@ -35,6 +35,15 @@ const $ = (sel) => {
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 /**
+ * For elements that legitimately may not be there.
+ *
+ * `$` is deliberately never null, which makes it the wrong tool for asking
+ * whether something exists: `!!$(sel)` is always true, and mutating what it
+ * returns mutates a detached node that nobody can see.
+ */
+const find = (sel) => document.querySelector(sel);
+
+/**
  * The backend is gone: stop pretending the page still works.
  *
  * Every control here depends on a server on this machine, so when that server
@@ -520,10 +529,20 @@ const STATE_LABELS = {
   damaged: "interrupted — will be redone",
 };
 
-async function scanFolder() {
+/**
+ * Re-check the folder.
+ *
+ * `quiet` is for a re-scan caused by editing one file's settings: it leaves the
+ * list standing and patches the rows in place. Rebuilding it would collapse the
+ * page to nothing for a moment, which on a folder of fifty videos means being
+ * thrown back to the top and scrolling down again after every single choice.
+ */
+async function scanFolder({ quiet = false } = {}) {
   if (!state.cwd) return null;
-  $("#scan-summary").textContent = "checking…";
-  $("#scan-detail").innerHTML = "";
+  if (!quiet) {
+    $("#scan-summary").textContent = "checking…";
+    $("#scan-detail").innerHTML = "";
+  }
   try {
     const scan = await api("/api/scan", {
       method: "POST",
@@ -538,7 +557,7 @@ async function scanFolder() {
     $("#scan-summary").textContent = scan.summary;
 
     // The list first: the button's label counts the boxes in it.
-    renderScanList(scan);
+    if (!(quiet && patchScanList(scan))) renderScanList(scan);
     updateSubmitButton();
     return scan;
   } catch (err) {
@@ -563,22 +582,62 @@ function renderScanList(scan) {
     $("#scan-detail").innerHTML = "";
     return;
   }
-  const rows = scan.files.map((f) => {
-    const checked = f.state !== "done" && !state.excluded.has(f.path);
-    const forced = f.state === "done" && state.included.has(f.path);
-    const path = encodeURIComponent(f.path);
-    const own = f.overrides || {};
-    const custom = Object.keys(own).length;
-    return `<li class="scan-${f.state}${custom ? " scan-custom" : ""}">
+  // The list scrolls inside its own box, so rebuilding it lands you back at the
+  // top of fifty videos. Anything still on screen afterwards keeps its place.
+  const keep = scanViewState();
+  const problems = (scan.config_problems || []).length
+    ? `<p class="hint scan-problem">${scan.config_problems
+        .map((p) => escapeHtml(p)).join("<br>")}</p>`
+    : "";
+  $("#scan-detail").innerHTML = `
+    <div class="scan-actions">
+      <button class="btn ghost tiny" id="btn-scan-all">Tick all</button>
+      <button class="btn ghost tiny" id="btn-scan-none">Untick all</button>
+      <button class="btn ghost tiny" id="btn-scan-todo">Only the unfinished</button>
+      ${resetButtonHtml(scan)}
+    </div>
+    ${problems}
+    <ul class="scan-list">${scan.files.map((f) => scanRowHtml(f)).join("")}</ul>
+    <p class="hint">
+      Per-file choices are saved in <code>${escapeHtml(scan.config_file || "sgen.folder.yaml")}</code>,
+      beside the videos — so they survive restarts, move with the folder, and can
+      be edited by hand for a large batch.
+    </p>`;
+  restoreScanView(keep);
+}
+
+/** Which rows are expanded, and how far down the list you were. */
+function scanViewState() {
+  return {
+    scroll: find("#scan-detail .scan-list")?.scrollTop || 0,
+    open: $$("#scan-detail li[data-path] details[open]")
+      .map((d) => d.closest("li").dataset.path),
+  };
+}
+
+function restoreScanView(keep) {
+  for (const path of keep.open) {
+    const details = find(`#scan-detail li[data-path="${path}"] details`);
+    if (details) details.open = true;
+  }
+  const list = find("#scan-detail .scan-list");
+  if (list) list.scrollTop = keep.scroll;
+}
+
+function scanRowHtml(f) {
+  const path = encodeURIComponent(f.path);
+  const own = f.overrides || {};
+  const custom = Object.keys(own).length;
+  return `<li class="scan-${f.state}${custom ? " scan-custom" : ""}" data-path="${path}">
       <label class="check scan-pick">
         <input type="checkbox" data-scan-path="${path}"
-          ${checked || forced ? "checked" : ""}>
+          ${scanRowTicked(f) ? "checked" : ""}>
         <span class="scan-name">${escapeHtml(f.name)}</span>
       </label>
       <span class="scan-state">${STATE_LABELS[f.state] || f.state}</span>
       <span class="scan-why">${escapeHtml(f.reason)}</span>
       <details class="scan-own"${custom ? " open" : ""}>
-        <summary>${custom ? `settings for this file (${custom})` : "settings for this file"}</summary>
+        <summary>${ownSummary(custom)}</summary>
         <div class="scan-own-row">
           <label>Profile
             <select data-override="profile" data-path="${path}">
@@ -587,8 +646,7 @@ function renderScanList(scan) {
           </label>
           <label>Translate
             <select data-override="translate" data-path="${path}">
-              ${TRANSLATE_CHOICES.map(([v, label]) =>
-                `<option value="${v}"${(own.translate || "") === v ? " selected" : ""}>${label}</option>`).join("")}
+              ${translateOptions(own.translate)}
             </select>
           </label>
           <label class="check">
@@ -596,36 +654,101 @@ function renderScanList(scan) {
               ${own.romanize ? "checked" : ""}>
             Latin script
           </label>
-          ${custom ? `<button class="btn ghost tiny" data-clear-override="${path}">Use the panel settings</button>` : ""}
+          ${custom ? clearOverrideHtml(path) : ""}
         </div>
       </details>
     </li>`;
-  });
-  const problems = (scan.config_problems || []).length
-    ? `<p class="hint scan-problem">${scan.config_problems
-        .map((p) => escapeHtml(p)).join("<br>")}</p>`
-    : "";
-  // Only offered when there is something to undo, so the button is never a
-  // decoy — and it names the count, because it discards work you did.
-  const customCount = scan.files.filter((f) => Object.keys(f.overrides || {}).length).length;
-  const resetButton = customCount
+}
+
+/** Ticked by default when there is work to do, minus the user's own deviations. */
+function scanRowTicked(f) {
+  return f.state === "done"
+    ? state.included.has(f.path)
+    : !state.excluded.has(f.path);
+}
+
+const ownSummary = (custom) =>
+  custom ? `settings for this file (${custom})` : "settings for this file";
+
+const clearOverrideHtml = (path) =>
+  `<button class="btn ghost tiny" data-clear-override="${path}">Use the panel settings</button>`;
+
+// Only offered when there is something to undo, so the button is never a decoy —
+// and it names the count, because it discards work you did.
+function resetButtonHtml(scan) {
+  const custom = scan.files.filter((f) => Object.keys(f.overrides || {}).length).length;
+  return custom
     ? `<button class="btn ghost tiny" id="btn-reset-overrides">
-         Reset per-file settings (${customCount})</button>`
+         Reset per-file settings (${custom})</button>`
     : "";
-  $("#scan-detail").innerHTML = `
-    <div class="scan-actions">
-      <button class="btn ghost tiny" id="btn-scan-all">Tick all</button>
-      <button class="btn ghost tiny" id="btn-scan-none">Untick all</button>
-      <button class="btn ghost tiny" id="btn-scan-todo">Only the unfinished</button>
-      ${resetButton}
-    </div>
-    ${problems}
-    <ul class="scan-list">${rows.join("")}</ul>
-    <p class="hint">
-      Per-file choices are saved in <code>${escapeHtml(scan.config_file || "sgen.folder.yaml")}</code>,
-      beside the videos — so they survive restarts, move with the folder, and can
-      be edited by hand for a large batch.
-    </p>`;
+}
+
+/**
+ * Bring an existing list up to date without rebuilding it.
+ *
+ * Only the parts that a per-file change can affect are touched — the state
+ * label, the reason, the summary count, the tick — so nothing moves, no
+ * `<details>` snaps shut, and the control just used keeps focus. Returns false
+ * when the list on screen no longer matches the scan (a file appeared or
+ * vanished on disk), which needs a real render.
+ */
+function patchScanList(scan) {
+  const rows = new Map($$("#scan-detail li[data-path]").map((li) => [li.dataset.path, li]));
+  if (rows.size !== scan.files.length) return false;
+  if (!scan.files.every((f) => rows.has(encodeURIComponent(f.path)))) return false;
+  // A complaint about the config file appearing or clearing changes the layout.
+  const hasProblems = (scan.config_problems || []).length > 0;
+  if (hasProblems !== !!find("#scan-detail .scan-problem")) return false;
+  const actions = find("#scan-detail .scan-actions");
+  if (!actions) return false;
+
+  for (const f of scan.files) patchScanRow(rows.get(encodeURIComponent(f.path)), f);
+
+  const reset = find("#btn-reset-overrides");
+  const wanted = resetButtonHtml(scan);
+  const label = wanted.replace(/<[^>]*>/g, "").trim();
+  if (!wanted) {
+    reset?.remove();
+  } else if (!reset) {
+    actions.insertAdjacentHTML("beforeend", wanted);
+  } else if (reset.dataset.confirming !== "yes") {
+    reset.textContent = label;
+  } else if (reset.dataset.label !== label) {
+    // It is armed and the count moved under it. Disarm rather than relabel: a
+    // stale count on an armed button resets more files than it offered to.
+    disarm(reset);
+    reset.textContent = label;
+  }
+  return true;
+}
+
+function patchScanRow(li, f) {
+  const path = li.dataset.path;
+  const own = f.overrides || {};
+  const custom = Object.keys(own).length;
+
+  li.className = `scan-${f.state}${custom ? " scan-custom" : ""}`;
+  li.querySelector(".scan-state").textContent = STATE_LABELS[f.state] || f.state;
+  li.querySelector(".scan-why").textContent = f.reason;
+  li.querySelector(".scan-own > summary").textContent = ownSummary(custom);
+  if (custom) li.querySelector("details.scan-own").open = true;
+
+  // Show what was actually saved, so a rejected value cannot look accepted.
+  set(li.querySelector('[data-override="profile"]'), "value", own.profile || "");
+  set(li.querySelector('[data-override="translate"]'), "value", own.translate || "");
+  set(li.querySelector('[data-override="romanize"]'), "checked", !!own.romanize);
+  set(li.querySelector("input[data-scan-path]"), "checked", scanRowTicked(f));
+
+  // The per-row escape hatch arrives with the first override and goes with the last.
+  const row = li.querySelector(".scan-own-row");
+  const clear = row.querySelector("[data-clear-override]");
+  if (custom && !clear) row.insertAdjacentHTML("beforeend", clearOverrideHtml(path));
+  if (!custom && clear) clear.remove();
+}
+
+/** Assign only on a real change: writing to a live control can disturb it. */
+function set(el, prop, value) {
+  if (el && el[prop] !== value) el[prop] = value;
 }
 
 // "" means "whatever the settings panel says", which is the common case.
@@ -636,6 +759,12 @@ const TRANSLATE_CHOICES = [
   ["google", "Google"],
   ["local", "offline model"],
 ];
+
+function translateOptions(selected) {
+  return TRANSLATE_CHOICES.map(([value, label]) =>
+    `<option value="${value}"${(selected || "") === value ? " selected" : ""}>${label}</option>`
+  ).join("");
+}
 
 function profileOptions(selected) {
   const profiles = state.meta?.profiles || [];
@@ -652,8 +781,10 @@ async function setOverride(path, values) {
       method: "POST",
       body: JSON.stringify({ folder: state.cwd.path, path, values }),
     });
-    // Re-scan: a per-file change can flip whether that file counts as finished.
-    await scanFolder();
+    // Re-scan, because a per-file change can flip whether that file counts as
+    // finished — but quietly, patching the rows where they are. A rebuild here
+    // scrolled the page back to the top after every choice.
+    await scanFolder({ quiet: true });
   } catch (err) {
     toast(`Could not save that file's settings: ${err.message}`, "error");
   }
@@ -710,7 +841,7 @@ $("#scan-detail").addEventListener("click", async (event) => {
     toast(res.cleared
       ? `${res.cleared} file${res.cleared === 1 ? "" : "s"} back on the panel settings.`
       : "Nothing to reset.", "ok");
-    await scanFolder();
+    await scanFolder({ quiet: true });
   } catch (err) {
     toast(`Could not reset: ${err.message}`, "error");
     btn.disabled = false;
@@ -757,7 +888,7 @@ $("#scan-detail").addEventListener("click", (event) => {
   updateSubmitButton();
 });
 
-$("#btn-scan-folder").addEventListener("click", scanFolder);
+$("#btn-scan-folder").addEventListener("click", () => scanFolder());
 $("#opt-recursive").addEventListener("change", () => {
   if (state.scan) scanFolder();
   updateSubmitButton();
@@ -1143,7 +1274,10 @@ $("#btn-forget-all").addEventListener("click", async (event) => {
   if (!arm(button, `Delete all ${count} transcripts?`)) return;
   button.disabled = true;
   try {
-    const res = await api("/api/library/forget-all", { method: "POST" });
+    const res = await api("/api/library/forget-all", {
+      method: "POST",
+      body: JSON.stringify({ confirm: true }),
+    });
     const freed = res.freed ? ` — ${fmtSize(res.freed)} freed` : "";
     toast(res.removed
       ? `Forgot ${res.removed} file${res.removed === 1 ? "" : "s"}${freed}.`

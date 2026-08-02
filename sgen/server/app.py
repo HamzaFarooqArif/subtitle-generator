@@ -149,6 +149,12 @@ class TranslateDefaultRequest(BaseModel):
     target: str = ""
 
 
+class ForgetAllRequest(BaseModel):
+    """Deleting every cached transcript is not something to do by accident."""
+
+    confirm: bool = False
+
+
 class ProfileRequest(BaseModel):
     gating: dict[str, Any] = Field(default_factory=dict)
     cues: dict[str, Any] = Field(default_factory=dict)
@@ -600,13 +606,25 @@ def create_app() -> FastAPI:
         return {"ok": True, **result}
 
     @app.post("/api/library/forget-all")
-    def library_forget_all() -> dict[str, Any]:
+    def library_forget_all(req: ForgetAllRequest) -> dict[str, Any]:
         """Forget everything, including runs that never finished.
 
         An interrupted transcription leaves extracted audio with no sidecar: not
         listed anywhere, still a recording of someone.
+
+        The explicit `confirm` is the wire-level guard on an irreversible bulk
+        delete: the two clicks in the UI stop a person doing this by accident,
+        and this stops a bare POST — a replay, a stray fetch, a curl in the wrong
+        window — doing it without one.
         """
-        return {"ok": True, **library.forget_all(WORK_DIR, queue.active_paths())}
+        if not req.confirm:
+            raise HTTPException(400, "forgetting everything needs confirm: true")
+        removed = library.forget_all(WORK_DIR, queue.active_paths())
+        log.warning(
+            "forget-all: removed %d cache entries, freed %d bytes, kept %s",
+            removed["removed"], removed["freed"], removed["kept"] or "nothing",
+        )
+        return {"ok": True, **removed}
 
     # --------------------------------------------- online translation (opt-in)
 

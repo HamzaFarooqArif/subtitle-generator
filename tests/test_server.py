@@ -657,9 +657,20 @@ def test_the_id_cannot_point_outside_the_work_folder(private, bad):
     assert (work / "aaaa1111").exists()
 
 
+def test_forgetting_everything_will_not_happen_on_a_bare_post(private):
+    """An irreversible bulk delete should not be one stray request away. The two
+    clicks guard the person; this guards the wire."""
+    client, work, _ = private
+    # No body at all is rejected before the handler even runs; an explicit
+    # `false` is rejected by it.
+    assert client.post("/api/library/forget-all").status_code == 422
+    assert client.post("/api/library/forget-all", json={"confirm": False}).status_code == 400
+    assert (work / "aaaa1111").exists()
+
+
 def test_forget_all_empties_the_cache(private):
     client, work, _ = private
-    res = client.post("/api/library/forget-all").json()
+    res = client.post("/api/library/forget-all", json={"confirm": True}).json()
     assert res["removed"] == 1 and res["freed"] > 4000
     assert client.get("/api/library").json()["items"] == []
     assert not (work / "aaaa1111").exists()
@@ -676,8 +687,22 @@ def test_a_queued_file_is_not_forgotten_under_the_worker(private, monkeypatch):
     assert "being transcribed" in res.json()["detail"]
     assert (work / "aaaa1111").exists()
 
-    kept = client.post("/api/library/forget-all").json()
+    kept = client.post("/api/library/forget-all", json={"confirm": True}).json()
     assert kept["removed"] == 0 and kept["kept"] == ["private party.mp4"]
+
+
+def test_the_never_null_lookup_is_not_used_to_ask_whether_something_exists():
+    """`$` returns a detached div when nothing matches, so one listener cannot
+    kill the whole script. That makes it the wrong tool for an existence check:
+    `!!$(sel)` is always true, and writing to the result writes to a node nobody
+    can see. It cost a working patch path once already — `find()` is for that.
+    """
+    from sgen.server.app import STATIC_DIR
+
+    js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    body = js.split("const find =", 1)[1]  # the comment above it names the bug
+    assert "!!$(" not in body
+    assert "$(" in body and "find(" in body, "both helpers are still in use"
 
 
 def test_the_page_offers_to_forget_and_says_what_that_deletes(client):
