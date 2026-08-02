@@ -1,0 +1,29 @@
+# Core ASR runtime
+faster-whisper>=1.1.0
+ctranslate2>=4.5.0
+
+# CUDA libs that CTranslate2 links against (cuDNN 9)
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*
+
+# Subtitle IO
+pysubs2>=1.7.0
+
+# CLI / config
+typer>=0.12.0
+rich>=13.7.0
+PyYAML>=6.0
+
+# Local web UI (sgen ui)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+
+# Audio
+soundfile>=0.12.1
+numpy>=1.26
+
+# torch + torchaudio are installed separately from the CUDA index:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# Romanization of non-Latin scripts (sgen ui: "Also write Latin-script subtitles")
+indic-transliteration>=2.3

@@ -1,0 +1,47 @@
+{
+  // Three entries on purpose. The first is the one to run — it is also what
+  // plain F5 picks, since VS Code defaults to the first configuration.
+  // Occasional CLI things (transcribe a file, reformat, fixtures) live in
+  // tasks.json instead, under Terminal → Run Task, to keep this list short.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Stops any server left over from a previous run before binding, so
+      // pressing this twice replaces the app instead of stacking another copy
+      // on a different port. Turn that off with server.replace_running in
+      // settings.local.yaml, or by passing --no-replace here.
+      "name": "▶ Start the app",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "sgen",
+      "args": ["ui"],
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": { "PYTHONUNBUFFERED": "1" }
+    },
+    {
+      "name": "Check setup (ffmpeg, GPU, models)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "sgen",
+      "args": ["doctor"],
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Run tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-v"],
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}

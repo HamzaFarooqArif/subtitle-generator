@@ -1,0 +1,27 @@
+{
+  // Point VS Code at the project venv so the debugger, test runner and
+  // IntelliSense all resolve faster_whisper / torch / fastapi correctly.
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  },
+  // Keep the big directories out of search and the file watcher — models/ is
+  // ~12 GB and work/ fills with extracted WAVs.
+  "search.exclude": {
+    "models/**": true,
+    "work/**": true,
+    ".venv/**": true,
+    "tests/fixtures/**": true
+  },
+  "files.watcherExclude": {
+    "models/**": true,
+    "work/**": true,
+    ".venv/**": true
+  }
+}

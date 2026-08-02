@@ -1,0 +1,50 @@
+# Default profile: non-professional handheld recordings.
+#
+# Assumes: single built-in mic, wildly varying levels, room reverb, background
+# noise, whispered and unclear speech, non-lexical vocalization, and language
+# switching between English, German and Spanish.
+
+audio:
+  normalize: speechnorm      # per-frame levelling; loudnorm buries whispers
+  downmix: mono              # consumer recordings have no dialogue channel
+  keep_wav: true             # the post-editor needs the waveform
+
+asr:
+  model: large-v3            # never turbo here: it degrades fastest on exactly
+                             # this audio (accents, whispering, low SNR)
+  compute_type: float16      # int8 costs real accuracy; 8 GB has the room
+  batched: true
+  batch_size: 8              # conservative; leaves headroom for the desktop
+  beam_size: 5
+  best_of: 5
+  temperature: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+  condition_on_previous_text: false   # stops one bad patch poisoning the file
+  repetition_penalty: 1.05
+  word_timestamps: true
+  vad_filter: true
+  vad_min_silence_ms: 500
+  vad_speech_pad_ms: 200     # whispered onsets clip easily; keep this generous
+
+gating:
+  enabled: true
+  # Deliberately stricter than the library defaults. On this material a false
+  # subtitle is worse than a missing one.
+  max_no_speech_prob: 0.6
+  min_avg_logprob: -1.0
+  hard_no_speech_prob: 0.85
+  hard_avg_logprob: -1.6
+  max_compression_ratio: 2.4
+  min_words_per_second: 0.4
+  min_mean_word_prob: 0.35
+  drop_suppressed: true
+
+cues:
+  max_lines: 2
+  max_chars_per_line: 42
+  target_cps: 17.0
+  max_cps: 20.0
+  min_duration: 0.833
+  max_duration: 7.0
+  min_gap: 0.083
+
+formats: [srt, vtt]

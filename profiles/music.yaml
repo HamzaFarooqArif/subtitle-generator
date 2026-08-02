@@ -1,0 +1,71 @@
+# Profile for songs and any audio where speech sits under dense instrumentation.
+#
+# Why this exists: Silero VAD is trained on speech, and singing over a full
+# arrangement does not look like speech to it. On a 239-second Bollywood track it
+# classified 0.7 seconds as speech — 0.3% — so the default pipeline transcribed
+# 0.7 seconds and reported success. Disabling VAD on the same file recovered 71%
+# coverage with correct lyrics.
+#
+# The cost is real: without VAD, Whisper decodes silence and instrumental
+# passages too, which is where it hallucinates. Gating therefore does more work
+# here, and instrumental breaks are the place to check first.
+
+audio:
+  normalize: speechnorm
+  downmix: mono
+
+asr:
+  model: large-v3
+  compute_type: float16
+  # Both of these are required together. BatchedInferencePipeline derives its
+  # work units from VAD and refuses to run without it, so decoding the whole
+  # file means taking the sequential path.
+  batched: false
+  vad_filter: false
+  beam_size: 5
+  best_of: 5
+  temperature: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+  condition_on_previous_text: false
+  repetition_penalty: 1.05
+  word_timestamps: true
+  # Lyrics repeat by design — choruses are not hallucinations. Sentence
+  # resegmentation still applies, but allow longer runs between splits.
+  resegment: true
+  resegment_max_silence: 1.2
+  resegment_max_duration: 15.0
+
+gating:
+  enabled: true
+  # Deliberately looser than home-video. Sung vowels, falsetto and held notes
+  # score lower on every confidence metric than spoken words do, so the default
+  # thresholds delete real lyrics. Repetition checks are relaxed the most,
+  # because a chorus legitimately repeats.
+  max_no_speech_prob: 0.85
+  min_avg_logprob: -1.4
+  hard_no_speech_prob: 0.95
+  hard_avg_logprob: -2.0
+  max_compression_ratio: 3.2
+  min_mean_word_prob: 0.20
+  min_words_per_second: 0.2
+  min_span_for_wps_check: 6.0
+  drop_suppressed: true
+
+qc:
+  enabled: true
+  # VAD is already off, so there is nothing to retry with.
+  retry_without_vad: false
+  min_coverage: 0.20
+  # Songs have long instrumental passages; don't cry wolf over those.
+  max_suppressed_fraction: 0.75
+
+cues:
+  max_lines: 2
+  max_chars_per_line: 42
+  # Sung lines are slower than speech and want longer on screen.
+  target_cps: 13.0
+  max_cps: 17.0
+  min_duration: 1.0
+  max_duration: 8.0
+  min_gap: 0.083
+
+formats: [srt, vtt]

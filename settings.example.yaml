@@ -1,0 +1,94 @@
+# sgen settings — copy to settings.local.yaml and edit.
+#
+#   sgen config --init     creates settings.local.yaml from this file
+#   sgen config            shows what is in effect, and where each value came from
+#
+# settings.local.yaml is gitignored, so it is safe to keep API keys in it.
+# Everything here is optional: delete any line and the built-in default applies.
+# The file is re-read on every request, so the running UI picks up an edit
+# without a restart.
+#
+# This is about *your machine* — keys, paths, ports. How audio is transcribed
+# lives in profiles/*.yaml, which are shared and committed.
+
+
+# --------------------------------------------------------------------------- #
+# Online translation keys.
+#
+# Only used when you press "Translate now" on a finished file. Nothing here is
+# read during transcription, which stays fully offline.
+#
+# Instead of writing keys here you can set SGEN_GOOGLE_API_KEY and
+# SGEN_DEEPL_API_KEY in the environment; those win over this file.
+# --------------------------------------------------------------------------- #
+api_keys:
+  # console.cloud.google.com: create a project -> enable the Cloud Translation
+  # API -> link billing -> Credentials -> Create credentials -> API key.
+  # Starts with "AIza". 500,000 characters a month are free, which is roughly
+  # 300 files the size of a 25-minute video.
+  google: ""
+
+  # deepl.com/pro-api: sign up for DeepL API Free -> Account -> API keys.
+  # Often better than Google on German; it has no Hindi at all.
+  deepl: ""
+
+  # Free and Pro use different hostnames. Free keys end in ":fx" and are
+  # detected automatically, so change this only for a Pro key.
+  deepl_plan: free      # free | pro
+
+
+# --------------------------------------------------------------------------- #
+# What the UI and the CLI start from.
+# --------------------------------------------------------------------------- #
+defaults:
+  # profiles/*.yaml — home-video, music, verbatim.
+  profile: home-video
+
+  # "" detects the language per file. Pin one (en, de, es) only when the whole
+  # file is that language: pinning German on a German/English recording drops
+  # the English half.
+  language: ""
+
+  # Names, places and pets in your footage, comma-separated. The cheapest
+  # accuracy win available.
+  hotwords: ""          # e.g. "Thomas, Oaxaca, Kreuzberg"
+
+  # Also write Latin-script subtitles for non-Latin languages, so नमस्ते comes
+  # out as "namaste" in a second file.
+  romanize: false
+
+  # Keep segments the hallucination gate removed, marked, instead of dropping
+  # them. For auditing what was cut.
+  keep_suppressed: false
+
+  # SRT only. WebVTT is for browser players; next to a video file it is a second
+  # subtitle file saying the same thing. Use [srt, vtt] to get both.
+  formats: [srt]
+
+  # "" writes subtitles next to each source file. Set an absolute path to
+  # collect everything in one place instead.
+  out_dir: ""           # e.g. "D:/subtitles"
+
+  translate:
+    # Translate automatically, without choosing it per run. Files already in
+    # `target` are left alone — there is nothing to translate.
+    auto: false
+
+    provider: google    # google | deepl | local (the offline model)
+    target: en
+
+
+# --------------------------------------------------------------------------- #
+# The local web UI (sgen ui).
+# --------------------------------------------------------------------------- #
+server:
+  # Localhost only. Binding to 0.0.0.0 would let anything on your network read
+  # any file this account can, through the file browser.
+  host: 127.0.0.1
+  port: 8420
+  open_browser: true
+
+  # Stop servers left over from a previous launch instead of adding to them.
+  # Only processes that answer as sgen are stopped; anything else holding the
+  # port is reported and left alone. Set to false to run several at once.
+  replace_running: true

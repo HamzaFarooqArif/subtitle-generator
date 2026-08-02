@@ -1,0 +1,25 @@
+# Virtualenv
+.venv/
+
+# Downloaded model weights (~7 GB) — recreate with `sgen models pull`
+models/
+
+# Extracted audio, sidecars, intermediate output
+work/
+
+# Generated test fixtures (built by tests/make_fixture.ps1)
+tests/fixtures/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Local settings: API keys, machine paths, port (never commit).
+# settings.example.yaml is the committed template.
+settings.local.yaml
+secrets.local.json
+
+# Per-machine tool permissions, not project configuration.
+.claude/settings.local.json

@@ -1,0 +1,66 @@
+# Transcribe everything; delete by hand afterwards.
+#
+# Use this when the default profile is removing things you wanted to keep. The
+# gate stays on only for the cases where Whisper output is definitely not speech
+# — learned subtitle boilerplate and degenerate decode loops — and every
+# judgement call is left to you.
+#
+# Measured motivation: on a 27-minute file whose vocalization is largely
+# non-lexical, the home-video profile suppressed 51% of segments. Much of that
+# was correct (breathing, repeated "ah"), but it also removed genuine short
+# utterances at low confidence ("Come on.", "Yes.") and genuine repetition
+# ("Yes, yes, yes") that the repeat-loop check cannot distinguish from a decode
+# loop. If you would rather see those and delete them yourself, use this.
+#
+# VAD is off, because voice activity detection is the other thing that silently
+# removes content — it discards quiet, unvoiced and sung speech.
+
+audio:
+  normalize: speechnorm
+  downmix: mono
+
+asr:
+  model: large-v3
+  compute_type: float16
+  batched: false        # required together with vad_filter: false
+  vad_filter: false
+  beam_size: 5
+  best_of: 5
+  temperature: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+  condition_on_previous_text: false
+  repetition_penalty: 1.05
+  word_timestamps: true
+  resegment: true
+
+gating:
+  enabled: true
+  # Only the unambiguous cases remain active:
+  #   - hallucination_phrase (learned subtitle credits, "Thanks for watching")
+  #   - repetition (compression ratio, i.e. genuinely degenerate output)
+  # Everything confidence-based is disabled by pushing thresholds out of range.
+  max_no_speech_prob: 1.01
+  hard_no_speech_prob: 1.01
+  min_avg_logprob: -99.0
+  hard_avg_logprob: -99.0
+  min_mean_word_prob: 0.0
+  min_words_per_second: 0.0
+  max_compression_ratio: 3.0
+  max_repeat_of_neighbour: 99
+  drop_suppressed: true
+
+qc:
+  enabled: true
+  retry_without_vad: false   # VAD is already off
+  min_coverage: 0.05
+  max_suppressed_fraction: 0.9
+
+cues:
+  max_lines: 2
+  max_chars_per_line: 42
+  target_cps: 15.0
+  max_cps: 20.0
+  min_duration: 0.833
+  max_duration: 7.0
+  min_gap: 0.083
+
+formats: [srt, vtt]

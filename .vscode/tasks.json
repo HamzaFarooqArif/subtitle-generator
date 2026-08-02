@@ -1,0 +1,159 @@
+{
+  // Terminal → Run Task. These run without the debugger attached, which is
+  // what you want for normal use — no debugpy tracing overhead during
+  // transcription. The occasional/advanced commands live here rather than in
+  // launch.json so the F5 menu stays short.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Ctrl+Shift+B runs this. Simplest way to start the app — no menu.
+      "label": "Start the app",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "sgen", "ui"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      // "Start the app" already stops previous servers itself. This is for
+      // shutting everything down without starting anything.
+      "label": "Stop all servers",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "sgen", "stop"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      // Where the API keys and machine defaults live.
+      "label": "Settings: show what is in effect",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "sgen", "config"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start the app on another port",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "sgen", "ui", "--port", "${input:port}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      // Auto-restarts on code edits. Breakpoints will not hit (uvicorn --reload
+      // runs the app in a child process), which is fine for a task.
+      "label": "Start the app (auto-reload on code changes)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "sgen", "ui", "--no-open", "--reload"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+
+    {
+      "label": "Check setup (doctor)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "sgen", "doctor"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Verify models resolve offline",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "sgen", "models", "verify"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+
+    {
+      "label": "Transcribe a file or folder (CLI)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "sgen", "run", "${input:mediaPath}", "--verbose"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Rebuild subtitles from a sidecar (no GPU)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "sgen", "reformat", "${input:sidecarPath}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+
+    {
+      "label": "Run tests",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["-m", "pytest", "tests", "-q"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run fast tests (no GPU)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": [
+        "-m", "pytest",
+        "tests/test_cues.py", "tests/test_gating.py", "tests/test_resegment.py",
+        "tests/test_write.py", "tests/test_output_naming.py", "-q"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build test fixtures",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-ExecutionPolicy", "Bypass",
+        "-File", "${workspaceFolder}/tests/make_fixture.ps1"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    }
+  ],
+
+  "inputs": [
+    {
+      "id": "mediaPath",
+      "type": "promptString",
+      "description": "Path to a video/audio file, or a folder to process recursively",
+      "default": "tests/fixtures/sample.mp4"
+    },
+    {
+      "id": "sidecarPath",
+      "type": "promptString",
+      "description": "Path to a transcript.sgen.json sidecar under work/",
+      "default": "work"
+    },
+    {
+      "id": "port",
+      "type": "promptString",
+      "description": "Port for the web UI",
+      "default": "8422"
+    }
+  ]
+}

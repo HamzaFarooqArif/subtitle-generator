@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sgen — subtitle generator</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!--
+  Shown when the backend stops answering. A page whose server has gone keeps
+  looking perfectly normal — folders are still listed, buttons still depress —
+  while every click quietly fails. That is indistinguishable from a bug in the
+  page, so say it out loud instead.
+-->
+<div class="offline hidden" id="offline">
+  <strong>Lost contact with the app.</strong>
+  <span id="offline-reason"></span>
+  <span>It was most likely restarted — this page is now out of date.</span>
+  <button class="btn" id="btn-reload">Reload the page</button>
+</div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">sgen</span>
+    <span class="tagline">offline subtitle generator</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-view="queue">Subtitles</button>
+    <button class="tab" data-view="translate">Translate</button>
+    <button class="tab" data-view="tune">Tune gate</button>
+  </nav>
+  <div class="env" id="env"><span class="dot pending"></span> connecting…</div>
+</header>
+
+<main>
+
+<!-- ==================== SUBTITLES ==================== -->
+<section class="view active" id="view-queue">
+  <div class="columns">
+
+    <div class="panel">
+      <h2>1 · Pick files</h2>
+      <div class="browser">
+        <div class="crumbs" id="crumbs"></div>
+        <div class="browser-actions">
+          <select id="drive-select" title="Jump to drive"></select>
+          <button class="btn ghost" id="btn-up">↑ Up</button>
+          <button class="btn ghost" id="btn-select-all">Select all media</button>
+        </div>
+        <ul class="listing" id="listing"><li class="muted">Loading…</li></ul>
+      </div>
+      <div class="selection" id="selection">
+        <div class="selection-head">
+          <strong>Selected</strong>
+          <span class="badge" id="selection-count">0</span>
+          <button class="btn ghost tiny" id="btn-clear-selection">Clear</button>
+        </div>
+        <ul id="selection-list" class="chips"></ul>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>2 · Settings</h2>
+      <p class="hint">
+        These start from <code id="settings-path">settings.local.yaml</code>.
+        Edit that file to change what they start as — it also holds the API keys.
+        Create it with <code>sgen config --init</code>.
+      </p>
+
+      <div class="field">
+        <label for="opt-profile">Profile</label>
+        <select id="opt-profile"></select>
+        <p class="hint" id="profile-hint"></p>
+      </div>
+
+      <div class="field">
+        <label for="opt-language">Language</label>
+        <select id="opt-language"></select>
+        <p class="hint">
+          <strong>If the file mixes languages, leave this on Detect.</strong>
+          Pinning German on an English/German file dropped the English half
+          entirely. Pin only when the whole file is one language and detection
+          is getting it wrong.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="opt-hotwords">Names in the footage</label>
+        <input type="text" id="opt-hotwords" placeholder="Thomas, Oaxaca, Kreuzberg">
+        <p class="hint">People, places and pets. The cheapest accuracy win there is.</p>
+      </div>
+
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" id="opt-romanize">
+          Also write Latin-script subtitles
+        </label>
+        <p class="hint">
+          For languages you speak but don't read: नमस्ते becomes
+          <code>namaste</code>, as a second file. Indic scripts only.
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="opt-translate-mode">Also translate</label>
+        <select id="opt-translate-mode">
+          <option value="none" selected>No — transcribe only</option>
+          <option value="deepl">Cloud: DeepL</option>
+          <option value="google">Cloud: Google Translate</option>
+          <option value="local">Offline model (lower quality)</option>
+        </select>
+
+        <div class="subfield" id="translate-opts">
+          <label for="opt-translate-target">Into</label>
+          <select id="opt-translate-target"></select>
+          <span id="engine-row">
+            <label for="opt-translate-engine">Offline engine</label>
+            <select id="opt-translate-engine">
+              <option value="auto" selected>Automatic</option>
+              <option value="nllb">NLLB (text)</option>
+              <option value="whisper">Whisper (audio)</option>
+            </select>
+          </span>
+        </div>
+
+        <p class="hint" id="translate-mode-hint"></p>
+
+        <label class="check" id="remember-row">
+          <input type="checkbox" id="opt-translate-remember">
+          Always do this — every file that isn't already in that language
+        </label>
+
+        <div class="inline">
+          <button class="btn tiny" id="btn-open-keys">Set up cloud API keys…</button>
+          <span class="hint" id="translate-remember-status"></span>
+        </div>
+      </div>
+
+      <details class="more">
+        <summary>More settings</summary>
+
+        <div class="field">
+          <label for="opt-model">Model</label>
+          <select id="opt-model"></select>
+          <p class="hint" id="model-hint"></p>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="opt-batch">Batch size</label>
+            <input type="number" id="opt-batch" min="1" max="32" value="8">
+          </div>
+          <div class="field">
+            <label for="opt-beam">Beam size</label>
+            <input type="number" id="opt-beam" min="1" max="10" value="5">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Output formats</label>
+          <div class="checks">
+            <label class="check"><input type="checkbox" id="fmt-srt" checked> .srt</label>
+            <!-- Unchecked: defaults.formats in settings.local.yaml decides, and
+                 an attribute that disagreed with it would flash on before the
+                 settings arrive. -->
+            <label class="check"><input type="checkbox" id="fmt-vtt"> .vtt</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="opt-outdir">Output folder</label>
+          <div class="inline">
+            <input type="text" id="opt-outdir" placeholder="(blank: next to each source file)">
+            <button class="btn ghost" id="btn-use-current">Use current</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="check">
+            <input type="checkbox" id="opt-keep-suppressed">
+            Keep gated segments in output
+          </label>
+          <p class="hint">
+            Off by default: text that looks like a hallucination over breathing or
+            noise is removed. Turn on only to audit what was cut.
+          </p>
+        </div>
+
+        <div class="field">
+          <label class="check"><input type="checkbox" id="opt-overwrite"> Redo completed work</label>
+        </div>
+      </details>
+
+      <button class="btn primary big" id="btn-submit" disabled>Transcribe 0 files</button>
+    </div>
+
+    <div class="panel wide">
+      <h2>3 · Files</h2>
+      <div class="panel-actions">
+        <button class="btn ghost tiny" id="btn-clear-jobs">Clear finished</button>
+      </div>
+      <div id="jobs"></div>
+
+      <h4 id="library-heading">Already transcribed</h4>
+      <p class="hint">
+        Everything transcribed before, read from disk. Press <strong>Translate…</strong>
+        on any of them — no need to transcribe again.
+      </p>
+      <div id="library"><p class="muted">Loading…</p></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ==================== TRANSLATE ==================== -->
+<section class="view" id="view-translate">
+  <div class="tune-intro">
+    <h2>Translate subtitles</h2>
+    <p>
+      Pick a file you have already transcribed. <strong>Google Translate and
+      DeepL are here</strong>, plus a paste-it-yourself round trip if you would
+      rather not use a key.
+    </p>
+    <p class="hint">
+      Transcription is offline. Translation through a service is not — that is
+      the one step where text leaves this machine, and it only happens when you
+      press the button.
+    </p>
+  </div>
+
+  <div class="columns">
+    <div class="panel wide">
+      <h3>Which file?</h3>
+      <div id="translate-picker"><p class="muted">Loading…</p></div>
+    </div>
+
+    <div class="panel wide hidden" id="translate-panel">
+      <h2>Translate <span class="subtle" id="translate-target-name"></span></h2>
+      <div class="panel-actions">
+        <button class="btn ghost tiny" id="btn-close-translate">Close</button>
+      </div>
+
+      <div class="notice">
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <div>
+          <strong>This step sends your transcript to whichever translator you paste it into.</strong>
+          Everything else here runs offline — the audio never leaves this machine.
+          Copying the text out is the one point where that changes. Unremarkable
+          for a film; for personal recordings it's your call to make deliberately.
+        </div>
+      </div>
+
+      <div class="auto-translate">
+        <h4>Automatic</h4>
+        <div class="auto-row">
+          <select id="auto-provider"></select>
+          <label class="check" for="auto-lang">into
+            <select id="auto-lang"></select>
+          </label>
+          <button class="btn primary" id="btn-auto-translate">Translate now</button>
+          <span class="hint" id="auto-status"></span>
+        </div>
+        <p class="hint" id="auto-hint"></p>
+
+        <details class="keys" id="keys-block">
+          <summary>API keys</summary>
+          <p class="hint">
+            Keys are stored in <code id="keys-path">settings.local.yaml</code>,
+            which is gitignored — you can also paste them straight into that
+            file, or set <code>SGEN_GOOGLE_API_KEY</code> /
+            <code>SGEN_DEEPL_API_KEY</code> in the environment to keep them off
+            disk. Both services give <strong>500,000 characters a month
+            free</strong> — about 300 files the size of a 25-minute video, so you
+            will probably never pay.
+          </p>
+          <p class="hint" id="keys-source"></p>
+
+          <div class="field">
+            <label for="key-google">Google Translate key</label>
+            <input type="password" id="key-google" placeholder="AIza…">
+            <p class="hint">
+              <strong>Where to get it:</strong>
+              <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noreferrer">create a project</a> →
+              <a href="https://console.cloud.google.com/apis/library/translate.googleapis.com" target="_blank" rel="noreferrer">enable the Cloud Translation API</a> →
+              <a href="https://console.cloud.google.com/billing" target="_blank" rel="noreferrer">link billing</a> →
+              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">Credentials → Create credentials → API key</a>.
+              Billing must be active even for the free allowance, so a card is
+              required. Worth setting a budget alert, and restricting the key to
+              the Translation API.
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="key-deepl">DeepL key</label>
+            <input type="password" id="key-deepl" placeholder="xxxxxxxx-xxxx-…:fx">
+            <p class="hint">
+              <strong>Where to get it:</strong>
+              <a href="https://www.deepl.com/pro-api" target="_blank" rel="noreferrer">sign up for DeepL API Free</a> →
+              <a href="https://www.deepl.com/your-account/keys" target="_blank" rel="noreferrer">Account → API keys</a>.
+              Free keys end in <code>:fx</code> and are detected automatically.
+              Which languages it can reach is read from DeepL itself, so the list
+              stays right as the service adds more.
+            </p>
+          </div>
+
+          <div class="ext-actions">
+            <label class="check" for="key-deepl-plan">DeepL plan
+              <select id="key-deepl-plan">
+                <option value="free" selected>Free (auto-detected)</option>
+                <option value="pro">Pro</option>
+              </select>
+            </label>
+            <button class="btn" id="btn-save-keys">Save keys</button>
+            <button class="btn ghost" id="btn-test-key">Test</button>
+            <span class="hint" id="keys-status"></span>
+          </div>
+        </details>
+      </div>
+
+      <h4>Or paste it yourself</h4>
+      <div class="ext-steps">
+        <div class="ext-step">
+          <strong>1</strong>
+          <button class="btn" id="btn-copy-text">Copy subtitle text</button>
+          <span class="hint" id="copy-status"></span>
+        </div>
+        <div class="ext-step">
+          <strong>2</strong>
+          <span class="hint">
+            Paste it into
+            <a href="https://translate.google.com" target="_blank" rel="noreferrer">Google Translate</a>,
+            then copy the result. <strong>Keep the line numbers.</strong>
+          </span>
+        </div>
+        <div class="ext-step">
+          <strong>3</strong>
+          <span class="hint">Paste the translation here and apply it.</span>
+        </div>
+      </div>
+
+      <textarea id="ext-input" rows="9" placeholder="1. Music. Just a second.
+2. Quiet, it might be a call.
+3. Yes, darling?"></textarea>
+
+      <div class="ext-actions">
+        <label class="check" for="ext-lang">Language code
+          <input type="text" id="ext-lang" value="en" size="5">
+        </label>
+        <button class="btn primary" id="btn-apply-translation">Apply translation</button>
+        <span class="hint" id="ext-result"></span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ==================== TUNE ==================== -->
+<section class="view" id="view-tune">
+  <div class="tune-intro">
+    <h2>Tune the gate</h2>
+    <p>
+      Rebuilds subtitles from a stored transcript with different thresholds.
+      <strong>No GPU, no re-transcription</strong> — move a slider and see
+      immediately what is kept and what is cut.
+    </p>
+    <p class="hint">
+      Watch for <em>real speech being suppressed</em>. If
+      <code>low_word_confidence</code> or <code>non_lexical</code> look high,
+      relax those first.
+    </p>
+    <select id="tune-job"><option value="">— pick a finished file —</option></select>
+  </div>
+
+  <div class="columns tune-columns">
+    <div class="panel">
+      <h3>Thresholds</h3>
+      <div id="tune-controls"></div>
+      <div class="tune-buttons">
+        <button class="btn ghost" id="btn-tune-reset">Reset</button>
+        <button class="btn primary" id="btn-tune-apply" disabled>Save as default</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Effect</h3>
+      <div class="stat-row" id="tune-stats"></div>
+      <h4>Suppressed segments</h4>
+      <div class="suppressed" id="tune-suppressed"><p class="muted">Pick a file.</p></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
