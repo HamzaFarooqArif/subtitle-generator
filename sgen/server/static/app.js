@@ -468,12 +468,32 @@ $("#listing").addEventListener("click", (event) => {
     browse(decodeURIComponent(li.dataset.dir));
   } else if (li.dataset.file) {
     const path = decodeURIComponent(li.dataset.file);
+    const picking = !state.selection.has(path);
+    // Picking files by hand and ticking a scan are two ways of saying the same
+    // thing, and only one of them can win — with both on screen the ticks were
+    // silently ignored. Whichever you did last is the one in charge.
+    if (picking && state.scan && !dropScan("the files you pick by hand")) return;
     if (state.selection.has(path)) state.selection.delete(path);
     else state.selection.set(path, { name: li.dataset.name, size: +li.dataset.size });
     li.classList.toggle("selected");
     renderSelection();
   }
 });
+
+/** Put the folder scan away, first checking nobody is mid-edit inside it. */
+function dropScan(inFavourOf) {
+  if (!leaveFileSettings("pick files by hand")) return false;
+  const had = state.scan?.files.length || 0;
+  state.scan = null;
+  state.excluded.clear();
+  state.included.clear();
+  closeFileSettings();
+  $("#scan-detail").innerHTML = "";
+  $("#scan-summary").textContent =
+    `Checked ${had} file${had === 1 ? "" : "s"} — set aside in favour of `
+    + `${inFavourOf}. Press Check this folder again to go back to the whole folder.`;
+  return true;
+}
 
 $("#btn-up").addEventListener("click", () => {
   if (state.cwd?.parent) browse(state.cwd.parent);
@@ -544,6 +564,16 @@ const STATE_LABELS = {
 async function scanFolder({ quiet = false } = {}) {
   if (!state.cwd) return null;
   if (!quiet) {
+    // The other way of choosing. Leaving hand-picked files in place would mean
+    // the tick boxes below them decided nothing.
+    if (state.selection.size) {
+      const had = state.selection.size;
+      state.selection.clear();
+      renderSelection();
+      if (state.cwd) await browse(state.cwd.path);
+      toast(`Let go of the ${had} file${had === 1 ? "" : "s"} you had picked — `
+            + "the tick boxes decide now.", "");
+    }
     $("#scan-summary").textContent = "checking…";
     $("#scan-detail").innerHTML = "";
   }
@@ -1137,9 +1167,10 @@ function renderSelection() {
  * One button, two meanings — because two buttons that both said "Transcribe N
  * files" was worse.
  *
- * Selecting files is the explicit act, so a selection always wins. With nothing
- * selected the button takes the whole folder and skips what is already done,
- * which is the common case for a directory of holiday videos.
+ * A selection and a scan can no longer both exist — starting one lets go of the
+ * other — so this reads whichever is in charge. With neither, the button takes
+ * the whole folder and skips what is already done, which is the common case for
+ * a directory of holiday videos.
  */
 function updateSubmitButton() {
   const btn = $("#btn-submit");

@@ -48,6 +48,10 @@ underneath with a **Translate…** button.
 it still needs, **Transcribe folder** queues only that. Interrupt it however you
 like — close the app, restart the machine — and run it again; it continues.
 
+Clicking files and ticking a scan are the two ways to choose what runs, and only
+one can be active: starting either lets go of the other, and says so. Both at
+once meant the ticks were silently ignored in favour of the clicked files.
+
 Whether a video is finished is decided from **the subtitle files next to it**,
 never from anything the app remembers, because a job list in memory cannot
 survive a reboot and a database can disagree with the disk. Three things make
