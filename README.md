@@ -155,6 +155,9 @@ python -m sgen run "D:\videos\clip.mp4" --keep-suppressed
 
 # Re-break lines without re-transcribing (no GPU needed)
 python -m sgen reformat work\<id>\transcript.sgen.json --max-chars 32
+
+# Add Latin-script subtitles to something already transcribed (no GPU either)
+python -m sgen reformat work\<id>\transcript.sgen.json --romanize
 ```
 
 ## What it produces
@@ -519,7 +522,9 @@ the gating and normalization stages exist to handle.
   hallucination gating, file-level QC verdict
 - cue building with clause-aware line breaks, reading-speed enforcement and
   orphan control; `.srt`/`.vtt` output, UTF-8 with BOM
-- Latin-script transliteration for Indic scripts (नमस्ते → `namaste`)
+- Latin-script transliteration for Indic scripts (नमस्ते → `namaste`) and
+  Cyrillic (Тихо, может звонит → `Tikho, mozhet zvonit`); a language with no
+  romanizer says so on the job instead of quietly writing nothing
 - translation: Google or DeepL through the API, sending the numbered transcript
   as one document (see [DESIGN.md §4.10](DESIGN.md)); offline NLLB-200 as the
   privacy-preserving alternative; and a manual paste round trip needing no key

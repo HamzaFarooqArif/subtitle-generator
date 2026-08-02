@@ -260,6 +260,11 @@ def run(
                 console.print(
                     f"  [dim]coverage {result.verdict.coverage:.0%} of audio[/]"
                 )
+                # Notes are not only for suspect files: "you asked for Latin
+                # script and this language has no romanizer" belongs on a run
+                # that otherwise went perfectly.
+                for note in result.verdict.notes:
+                    console.print(f"    [yellow]·[/] {note}")
 
             flagged = [c for c in result.cues if c.warnings]
             if flagged:
@@ -308,6 +313,10 @@ def reformat(
     profile: Optional[str] = typer.Option(None, "--profile", "-p"),
     max_chars: Optional[int] = typer.Option(None, "--max-chars"),
     target_cps: Optional[float] = typer.Option(None, "--target-cps"),
+    romanize: Optional[bool] = typer.Option(
+        None, "--romanize/--no-romanize",
+        help="Also write Latin-script subtitles (Indic scripts and Cyrillic).",
+    ),
 ) -> None:
     """Rebuild cues and subtitle files from a sidecar. No GPU, no re-transcribe."""
     _setup_logging(False)
@@ -320,6 +329,8 @@ def reformat(
         cfg.cues.max_chars_per_line = max_chars
     if target_cps:
         cfg.cues.target_cps = target_cps
+    if romanize is not None:
+        cfg.romanize = romanize
 
     outputs = reformat_from_sidecar(sidecar, cfg)
     for out in outputs:

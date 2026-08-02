@@ -88,14 +88,15 @@ def test_script_detection():
 
 
 def test_language_without_support_is_unchanged():
-    """Arabic and Cyrillic are not handled; they must pass through, not crash."""
-    for text, lang in (("مرحبا", "ar"), ("привет", "ru"), ("こんにちは", "ja")):
+    """Arabic and Japanese are not handled; they must pass through, not crash."""
+    for text, lang in (("مرحبا", "ar"), ("こんにちは", "ja"), ("Γειά σου", "el")):
         assert translit.romanize(text, lang) == text
 
 
 def test_supported_reports_accurately():
     assert translit.supported("hi")
     assert translit.supported("ta")
+    assert translit.supported("ru")
     assert not translit.supported("en")
     assert not translit.supported("ar")
     assert not translit.supported(None)
@@ -124,6 +125,93 @@ def test_conventional_spellings_applied():
 
 
 # --------------------------------------------------------------------------- #
+# Cyrillic
+#
+# The scheme is BGN/PCGN for the East Slavic languages — the one an English
+# reader already knows from names and street signs — the official streamlined
+# system for Bulgarian, and for Serbian and Macedonian the Latin alphabet those
+# languages already use.
+# --------------------------------------------------------------------------- #
+
+# Lines from a real Russian transcript, plus the words that exercise the rules.
+RUSSIAN_CASES = [
+    ("Тихо, может звонит.", "Tikho, mozhet zvonit."),
+    ("Да, любимый?", "Da, lyubimyy?"),
+    ("Музыка Секунду.", "Muzyka Sekundu."),
+    ("Я в Москве.", "Ya v Moskve."),
+    ("Юрий Гагарин", "Yuriy Gagarin"),
+    ("Санкт-Петербург", "Sankt-Peterburg"),
+    ("щи", "shchi"),
+    ("хорошо", "khorosho"),
+    ("цена", "tsena"),
+]
+
+
+@pytest.mark.parametrize("cyrillic,expected", RUSSIAN_CASES)
+def test_known_russian_lines(cyrillic, expected):
+    assert translit.romanize(cyrillic, "ru") == expected
+
+
+def test_ye_at_the_start_of_a_word_and_after_a_vowel():
+    """е is /je/ where a vowel or nothing precedes it, /e/ after a consonant."""
+    assert translit.romanize("Елена", "ru") == "Yelena"
+    assert translit.romanize("моей", "ru") == "moyey"
+    assert translit.romanize("Петербург", "ru") == "Peterburg"   # not Pyeterburg
+
+
+def test_yo_is_o_after_a_hushing_consonant():
+    """жёлтый is "zholtyy" — "zhyoltyy" is nobody's spelling."""
+    assert translit.romanize("жёлтый", "ru") == "zholtyy"
+    assert translit.romanize("ёлка", "ru") == "yolka"
+
+
+def test_soft_and_hard_signs_disappear():
+    assert translit.romanize("день", "ru") == "den"
+    assert translit.romanize("объект", "ru") == "obyekt"
+
+
+def test_capitalisation_survives():
+    assert translit.romanize("МОСКВА", "ru") == "MOSKVA"
+    assert translit.romanize("Москва", "ru") == "Moskva"
+    # A multi-letter replacement takes the case of the letter it replaces.
+    assert translit.romanize("Щи", "ru") == "Shchi"
+    assert translit.romanize("ЩИ", "ru") == "SHCHI"
+
+
+def test_ukrainian_has_its_own_letters():
+    assert translit.romanize("Привіт", "uk") == "Pryvit"      # и is y, і is i
+    assert translit.romanize("Їжа", "uk") == "Yizha"
+    assert translit.romanize("гарно", "uk") == "harno"        # г is h, not g
+
+
+def test_bulgarian_differs_from_russian():
+    assert translit.romanize("България", "bg") == "Balgariya"   # ъ is a vowel
+    assert translit.romanize("Щастие", "bg") == "Shtastie"      # щ is sht
+    assert translit.romanize("Елена", "bg") == "Elena"          # no ye rule
+
+
+def test_serbian_and_macedonian_use_their_own_latin():
+    assert translit.romanize("Његош", "sr") == "Njegoš"
+    assert translit.romanize("Београд", "sr") == "Beograd"
+    assert translit.romanize("Скопје", "mk") == "Skopje"
+
+
+def test_english_and_numbers_inside_cyrillic_survive():
+    assert translit.romanize("Москва OK 2019", "ru") == "Moskva OK 2019"
+
+
+def test_cyrillic_is_detected_without_a_language_code():
+    assert translit.script_of("привет") == "Cyrillic"
+    assert translit.romanize("привет") == "privet"
+
+
+def test_the_indic_path_still_works():
+    """The Cyrillic branch returns before sanscript is ever consulted; make sure
+    it did not swallow the languages the module was written for."""
+    assert translit.romanize("नमस्ते", "hi") == "Namaste"
+
+
+# --------------------------------------------------------------------------- #
 # file writing
 # --------------------------------------------------------------------------- #
 
@@ -145,6 +233,40 @@ def test_write_romanized_skips_unsupported_language(tmp_path):
 
     cues = [Cue(start=1.0, end=3.0, lines=["Hello there"])]
     assert write_romanized(cues, tmp_path / "clip", ["srt"], "en") == []
+
+
+def test_write_romanized_handles_russian(tmp_path):
+    from sgen.cues import Cue
+    from sgen.write import write_romanized
+
+    cues = [Cue(start=1.0, end=3.0, lines=["Тихо, может звонит."])]
+    paths = write_romanized(cues, tmp_path / "clip", ["srt"], "ru")
+    assert [p.name for p in paths] == ["clip.ru-Latn.srt"]
+    body = paths[0].read_text(encoding="utf-8-sig")
+    assert "Tikho, mozhet zvonit." in body
+    assert "Тихо" not in body
+
+
+def test_a_language_with_no_romanizer_says_so(tmp_path):
+    """A ticked box that quietly does nothing is worse than one that says why."""
+    from sgen.cues import Cue
+    from sgen.write import romanize_or_explain
+
+    cues = [Cue(start=1.0, end=3.0, lines=["こんにちは"])]
+    paths, note = romanize_or_explain(cues, tmp_path / "clip", ["srt"], "ja")
+    assert paths == []
+    assert "ja" in note and "no romanizer" in note
+    assert "Cyrillic" in note, "it should say what is available"
+
+
+def test_nothing_is_said_when_it_worked(tmp_path):
+    from sgen.cues import Cue
+    from sgen.write import romanize_or_explain
+
+    cues = [Cue(start=1.0, end=3.0, lines=["Да, любимый?"])]
+    paths, note = romanize_or_explain(cues, tmp_path / "clip", ["srt"], "ru")
+    assert [p.name for p in paths] == ["clip.ru-Latn.srt"]
+    assert note == ""
 
 
 def test_romanized_keeps_timings(tmp_path):

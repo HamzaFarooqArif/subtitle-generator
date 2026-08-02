@@ -15,8 +15,8 @@ from .config import Config
 from .cues import Cue
 
 __all__ = [
-    "write_subtitles", "write_romanized", "write_sidecar", "load_sidecar",
-    "SIDECAR_VERSION",
+    "write_subtitles", "write_romanized", "romanize_or_explain", "write_sidecar",
+    "load_sidecar", "SIDECAR_VERSION",
 ]
 
 SIDECAR_VERSION = 1
@@ -102,6 +102,30 @@ def write_romanized(
     ]
     # BCP-47 style: hi-Latn is Hindi written in Latin script.
     return write_subtitles(romanized, out_base, formats, f"{language}-Latn", encoding)
+
+
+def romanize_or_explain(
+    cues: Sequence[Cue],
+    out_base: Path,
+    formats: Sequence[str],
+    language: str,
+    encoding: str = "utf-8-sig",
+) -> tuple[list[Path], str]:
+    """Write the Latin-script copies, or say why there are none.
+
+    Returning an empty list was enough for the caller but not for the user: a
+    ticked box produced no file, no error and no explanation, and the run looked
+    identical either way. The note travels on the QC verdict, which the UI, the
+    CLI and the sidecar all already show.
+    """
+    paths = write_romanized(cues, out_base, formats, language, encoding)
+    if paths:
+        return paths, ""
+    return [], (
+        f"Latin-script subtitles were asked for, but there is no romanizer for "
+        f"{language!r} — only the original script was written. Available for "
+        f"Indic scripts and Cyrillic."
+    )
 
 
 def write_sidecar(

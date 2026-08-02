@@ -38,6 +38,7 @@ SCRIPT_RANGES: dict[str, list[tuple[int, int]]] = {
     "Kannada": [(0x0C80, 0x0CFF)],
     "Malayalam": [(0x0D00, 0x0D7F)],
     "Sinhala": [(0x0D80, 0x0DFF)],
+    "Cyrillic": [(0x0400, 0x04FF), (0x0500, 0x052F)],
 }
 
 # Whisper language code -> sanscript source scheme name.
@@ -52,6 +53,8 @@ LANGUAGE_SCRIPTS: dict[str, str] = {
     "kn": "Kannada",
     "ml": "Malayalam",
     "si": "Sinhala",
+    "ru": "Cyrillic", "uk": "Cyrillic", "be": "Cyrillic",
+    "bg": "Cyrillic", "sr": "Cyrillic", "mk": "Cyrillic",
 }
 
 # Languages whose romanization benefits from Hindi-style schwa deletion.
@@ -163,6 +166,97 @@ def _hindi_polish(word: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Cyrillic
+#
+# Not sanscript's job, and not a schwa problem either — a letter table plus a
+# couple of context rules is the whole of it. The schemes chosen are the ones a
+# reader of English already recognises from names and street signs (BGN/PCGN for
+# the East Slavic languages, the official streamlined system for Bulgarian) and,
+# for Serbian and Macedonian, the Latin alphabet those languages already use.
+# --------------------------------------------------------------------------- #
+
+_RU = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
+    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}
+
+# The Ukrainian apostrophe is dropped, but only the typographic ones: mapping
+# ASCII ' too would turn an English "don't" in mixed text into "dont".
+_UK = {
+    **_RU,
+    "г": "h", "ґ": "g", "и": "y", "і": "i", "ї": "yi", "є": "ye",
+    "е": "e", "щ": "shch", "’": "", "ʼ": "",
+}
+
+_BE = {**_RU, "г": "h", "і": "i", "ў": "w", "’": "", "ʼ": ""}
+
+# Bulgarian has no ye rule, ъ is a vowel, and щ is "sht".
+_BG = {**_RU, "х": "h", "щ": "sht", "ъ": "a", "ь": "y", "ё": "yo"}
+
+# Gaj's Latin: not a transliteration so much as the language's other alphabet.
+_SR = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "ђ": "đ", "е": "e",
+    "ж": "ž", "з": "z", "и": "i", "ј": "j", "к": "k", "л": "l", "љ": "lj",
+    "м": "m", "н": "n", "њ": "nj", "о": "o", "п": "p", "р": "r", "с": "s",
+    "т": "t", "ћ": "ć", "у": "u", "ф": "f", "х": "h", "ц": "c", "ч": "č",
+    "џ": "dž", "ш": "š",
+}
+
+_MK = {**_SR, "ѓ": "gj", "ќ": "kj", "ѕ": "dz", "ђ": "gj", "ћ": "kj"}
+
+CYRILLIC_TABLES: dict[str, dict[str, str]] = {
+    "ru": _RU, "uk": _UK, "be": _BE, "bg": _BG, "sr": _SR, "mk": _MK,
+}
+
+# Languages where "е" is /je/ at the start of a word and after a vowel.
+_YE_LANGUAGES = {"ru", "be"}
+_CYRILLIC_VOWELS = set("аеёиоуыэюяіїєўАЕЁИОУЫЭЮЯІЇЄЎ")
+# After these, "ё" is /o/ — "жёлтый" is "zholtyy", not "zhyoltyy".
+_HUSHING = set("жчшщ")
+
+
+def _cyrillic_case(source: str, latin: str, run_is_caps: bool) -> str:
+    """Carry the original letter's case onto a replacement of any length."""
+    if not source.isupper() or not latin:
+        return latin
+    return latin.upper() if run_is_caps else latin[0].upper() + latin[1:]
+
+
+def _romanize_cyrillic(text: str, language: str) -> str:
+    table = CYRILLIC_TABLES.get(language, _RU)
+    ye_rule = language in _YE_LANGUAGES
+    out: list[str] = []
+
+    for i, ch in enumerate(text):
+        latin = table.get(ch.lower())
+        if latin is None:
+            out.append(ch)
+            continue
+
+        low = ch.lower()
+        before = text[i - 1] if i else ""
+        if ye_rule and low == "е" and (
+            not before or before.lower() not in table
+            or before in _CYRILLIC_VOWELS or before.lower() in ("ь", "ъ", "й")
+        ):
+            latin = "ye"          # Елена -> Yelena, моей -> moyey
+        elif low == "ё" and before.lower() in _HUSHING:
+            latin = "o"           # жёлтый -> zholtyy
+
+        after = text[i + 1] if i + 1 < len(text) else ""
+        caps_run = ch.isupper() and (
+            after.isupper() and after.lower() in table
+            or before.isupper() and before.lower() in table
+        )
+        out.append(_cyrillic_case(ch, latin, caps_run))
+
+    return "".join(out)
+
+
+# --------------------------------------------------------------------------- #
 # public API
 # --------------------------------------------------------------------------- #
 
@@ -196,6 +290,11 @@ def romanize(text: str, language: str | None = None) -> str:
     script = LANGUAGE_SCRIPTS.get((language or "").lower()) or script_of(text)
     if script is None or script not in SCRIPT_RANGES:
         return text
+
+    if script == "Cyrillic":
+        # Russian unless told otherwise: it is the language most Cyrillic text
+        # detected without a language code turns out to be.
+        return _romanize_cyrillic(text, (language or "ru").lower())
 
     try:
         convert = _transliterator(script)

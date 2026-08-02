@@ -152,10 +152,10 @@ const HELP = {
     "The cheapest accuracy win available: without it, an unusual name becomes whichever common word sounds nearest.",
   ],
   "opt-romanize": [
-    "A second subtitle file with Indic scripts written in Latin letters.",
-    "On — you get clip.hi.srt and clip.hi-Latn.srt; नमस्ते also appears as “namaste”.",
+    "A second subtitle file with the same words spelled in Latin letters.",
+    "On — you get clip.hi.srt and clip.hi-Latn.srt; नमस्ते also appears as “namaste”, Тихо as “Tikho”.",
     "Off — the original script only.",
-    "For a language you speak but do not read. Indic scripts only.",
+    "For a language you speak but do not read. Indic scripts and Cyrillic; other scripts say so in the job rather than doing nothing.",
   ],
   "opt-translate-mode": [
     "Whether to also produce subtitles in another language.",
@@ -1655,10 +1655,13 @@ function renderJobs() {
     const cancel = job.status === "queued"
       ? `<button class="btn ghost tiny" data-cancel="${job.id}">Cancel</button>` : "";
 
+    // Notes belong on a good run too: "you asked for Latin script and this
+    // language has no romanizer" is exactly the thing that used to happen in
+    // silence, leaving a ticked box that did nothing.
+    const notes = (job.qc_notes || []).map((n) => `<div>${escapeHtml(n)}</div>`).join("");
     const warn = job.suspect
-      ? `<div class="job-warn"><strong>⚠ This result looks wrong</strong>
-           ${(job.qc_notes || []).map((n) => `<div>${escapeHtml(n)}</div>`).join("")}</div>`
-      : "";
+      ? `<div class="job-warn"><strong>⚠ This result looks wrong</strong>${notes}</div>`
+      : (notes ? `<div class="job-note">${notes}</div>` : "");
     const outputs = (job.outputs || []).length
       ? `<div class="job-outputs">${job.outputs.map((o) =>
           `<div>→ ${escapeHtml(o)}</div>`).join("")}</div>` : "";

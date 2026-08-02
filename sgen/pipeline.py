@@ -394,13 +394,15 @@ class Pipeline:
             built, out_base, cfg.formats, transcript.language, cfg.encoding
         )
         if cfg.romanize:
-            extra_outputs = write.write_romanized(
+            extra_outputs, note = write.romanize_or_explain(
                 built, out_base, cfg.formats, transcript.language, cfg.encoding
             )
-            if extra_outputs:
-                outputs.extend(extra_outputs)
-            else:
-                log.info("romanization not available for language %r", transcript.language)
+            outputs.extend(extra_outputs)
+            if note:
+                # Silence here meant a ticked box that did nothing: the run
+                # looked identical whether or not romanization was possible.
+                verdict.notes.append(note)
+                log.warning("qc: %s", note)
 
         if cfg.translate_to_english and transcript.language != cfg.translate_target:
             outputs.extend(
@@ -553,4 +555,15 @@ def reformat_from_sidecar(sidecar: Path, cfg: Config) -> list[Path]:
     source = Path(data["source"]["path"])
     out_base = source.parent / source.stem
     language = data.get("language", "und")
-    return write.write_subtitles(built, out_base, cfg.formats, language, cfg.encoding)
+    outputs = write.write_subtitles(built, out_base, cfg.formats, language, cfg.encoding)
+    # Also here, not only in a full run: the transcript is all romanization
+    # needs, so a file already on disk should not have to go back to the GPU to
+    # gain its Latin-script copy.
+    if cfg.romanize:
+        extra, note = write.romanize_or_explain(
+            built, out_base, cfg.formats, language, cfg.encoding
+        )
+        outputs.extend(extra)
+        if note:
+            log.warning("%s", note)
+    return outputs

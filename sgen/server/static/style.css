@@ -222,6 +222,15 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
 }
 .job-warn strong { color: var(--warn); display: block; margin-bottom: 5px; }
 .job-warn > div { margin-top: 4px; }
+/* Something worth saying about a run that otherwise went fine. */
+.job-note {
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+  border-left: 2px solid var(--border-strong);
+  padding-left: 8px;
+  line-height: 1.5;
+}
 .warn-tags { display: inline-flex; gap: 5px; flex-wrap: wrap; margin-bottom: 4px; }
 .warn-tags .tag { font-family: var(--mono); font-size: 10px; }
 .bar { height: 4px; background: #23272f; border-radius: 2px; margin-top: 9px; overflow: hidden; }
