@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Sequence
@@ -19,6 +20,26 @@ __all__ = [
 ]
 
 SIDECAR_VERSION = 1
+
+
+def _save_atomically(
+    subs: pysubs2.SSAFile, path: Path, fmt: str, encoding: str
+) -> None:
+    """Write to a temporary file, then rename over the target.
+
+    This is what makes "the file exists, therefore that video is finished" a
+    safe thing to believe. Saving in place leaves a truncated but perfectly
+    plausible subtitle file if the machine loses power mid-write, and a resumable
+    batch would then skip that video forever. `os.replace` is atomic within a
+    volume, so a reader sees either the old file or the whole new one.
+    """
+    temp = path.with_name(path.name + ".part")
+    try:
+        subs.save(str(temp), format_=fmt, encoding=encoding)
+        os.replace(temp, path)
+    finally:
+        if temp.exists():
+            temp.unlink(missing_ok=True)
 
 
 def _to_ssafile(cues: Sequence[Cue]) -> pysubs2.SSAFile:
@@ -48,7 +69,7 @@ def write_subtitles(
     for fmt in formats:
         path = out_base.with_suffix("")
         path = path.parent / f"{path.name}.{language}.{fmt}"
-        subs.save(str(path), format_=fmt, encoding=encoding)
+        _save_atomically(subs, path, fmt, encoding)
         written.append(path)
     return written
 

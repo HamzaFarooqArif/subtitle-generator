@@ -56,6 +56,28 @@ VIDEO_SUFFIXES = {
 AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"}
 
 
+def _skip_finished(files: list[Path], cfg: Config, out_dir: Optional[Path]):
+    """Split a batch into what still needs doing and what is already done.
+
+    The judgement comes from the subtitle files themselves, so a batch of fifty
+    survives a reboot without any stored progress: re-run the same command and it
+    continues. A file whose subtitles look truncated is redone rather than
+    trusted.
+    """
+    from . import resume as resume_mod
+
+    target = cfg.translate_target if cfg.translate_to_english else None
+    todo, done = [], []
+    for source in files:
+        status = resume_mod.classify(
+            source, cfg, out_dir=out_dir, translate_target=target
+        )
+        (todo if status.needs_work else done).append(
+            source if status.needs_work else status
+        )
+    return todo, done
+
+
 def _settings() -> settings.Settings:
     """Read settings.local.yaml, complaining about a broken one but continuing."""
     user = settings.load_or_default()
@@ -134,6 +156,12 @@ def run(
              "Only 'nllb' supports targets other than English.",
     ),
     overwrite: bool = typer.Option(False, "--overwrite", help="Redo completed work."),
+    resume: bool = typer.Option(
+        True, "--resume/--no-resume",
+        help="Skip files that already have complete subtitles for these settings. "
+             "Judged from the subtitle files on disk, so an interrupted batch "
+             "picks up where it stopped.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """Transcribe files and write subtitles."""
@@ -174,6 +202,22 @@ def run(
     if not files:
         console.print("[red]No media files found.[/]")
         raise typer.Exit(1)
+
+    found = len(files)
+    if resume and not overwrite:
+        files, skipped = _skip_finished(files, cfg, out_dir)
+        if skipped:
+            console.print(
+                f"[dim]{len(skipped)} of {found} already have subtitles for these "
+                f"settings — skipping. Use --no-resume to redo them.[/]"
+            )
+            for status in skipped[:5]:
+                console.print(f"  [dim]· {status.source.name}: {status.reason}[/]")
+            if len(skipped) > 5:
+                console.print(f"  [dim]· … and {len(skipped) - 5} more[/]")
+        if not files:
+            console.print("[green]Nothing left to do.[/]")
+            return
 
     console.print(
         f"[bold]{len(files)}[/] file(s) · profile [cyan]{cfg.profile}[/] · "

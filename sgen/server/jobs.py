@@ -287,7 +287,7 @@ class JobQueue:
         # Cloud translation, only if it was asked for in Settings. Deliberately
         # after the subtitles are on disk: the transcription is the valuable
         # part, and a rejected API key must not lose it.
-        if _cloud_provider(job.options):
+        if cloud_provider(job.options):
             job.stage = "translate"
             job.stage_fraction = 0.5
             self._notify(job)
@@ -317,7 +317,7 @@ class JobQueue:
         """
         from .. import cloud, online
 
-        provider_name = _cloud_provider(job.options)
+        provider_name = cloud_provider(job.options)
         target = (job.options.get("translate_target") or "en").lower()
         source = (result.language or "").lower()
         cfg = build_config(job.options)
@@ -356,7 +356,7 @@ class JobQueue:
         )
 
 
-def _cloud_provider(options: dict[str, Any]) -> str:
+def cloud_provider(options: dict[str, Any]) -> str:
     """Which cloud provider this job should use, if any.
 
     An explicit choice in the request wins. Otherwise `defaults.translate.auto`

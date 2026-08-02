@@ -9,6 +9,7 @@ const state = {
   jobs: new Map(),        // id -> job
   library: [],            // transcripts on disk, survives server restarts
   providers: null,        // which online translators have keys
+  scan: null,             // last folder scan: what still needs doing
   translate: { contentId: null, name: "" },
   tune: { contentId: null, values: {}, timer: null },
 };
@@ -430,6 +431,119 @@ $("#btn-use-current").addEventListener("click", () => {
   if (state.cwd) $("#opt-outdir").value = state.cwd.path;
 });
 
+/* ============================================================== folder mode */
+
+/**
+ * Options exactly as a submit would send them.
+ *
+ * The scan has to be judged against the settings that will actually run,
+ * otherwise "already done" means something different from what happens next —
+ * a file with only Russian subtitles is finished if no translation was asked
+ * for, and unfinished if one was.
+ */
+function currentOptions() {
+  const formats = [];
+  if ($("#fmt-srt").checked) formats.push("srt");
+  if ($("#fmt-vtt").checked) formats.push("vtt");
+  return {
+    profile: $("#opt-profile").value,
+    model: $("#opt-model").value,
+    language: $("#opt-language").value,
+    hotwords: $("#opt-hotwords").value,
+    batch_size: +$("#opt-batch").value,
+    beam_size: +$("#opt-beam").value,
+    formats,
+    romanize: $("#opt-romanize").checked,
+    keep_suppressed: $("#opt-keep-suppressed").checked,
+    translate: translateMode() === "local",
+    cloud_provider:
+      translateMode() === "google" || translateMode() === "deepl"
+        ? translateMode() : "",
+    translate_engine: $("#opt-translate-engine").value,
+    translate_target: $("#opt-translate-target").value,
+    overwrite: $("#opt-overwrite").checked,
+  };
+}
+
+const STATE_LABELS = {
+  done: "already done",
+  pending: "to transcribe",
+  translate: "translation only",
+  damaged: "interrupted — will be redone",
+};
+
+async function scanFolder() {
+  if (!state.cwd) return null;
+  $("#scan-summary").textContent = "checking…";
+  $("#scan-detail").innerHTML = "";
+  try {
+    const scan = await api("/api/scan", {
+      method: "POST",
+      body: JSON.stringify({
+        folder: state.cwd.path,
+        options: currentOptions(),
+        out_dir: $("#opt-outdir").value.trim() || null,
+        recursive: $("#opt-recursive").checked,
+      }),
+    });
+    state.scan = scan;
+    $("#scan-summary").textContent = scan.summary;
+    const todo = scan.total - scan.counts.done;
+    $("#btn-queue-folder").disabled = todo === 0;
+    $("#btn-queue-folder").textContent = todo
+      ? `Transcribe ${todo} file${todo === 1 ? "" : "s"}`
+      : "Nothing to do";
+
+    // Show only what needs work, plus a line for the damaged ones: a list of 40
+    // finished files is noise.
+    const interesting = scan.files.filter((f) => f.state !== "done").slice(0, 40);
+    $("#scan-detail").innerHTML = interesting.length
+      ? `<ul class="scan-list">${interesting.map((f) =>
+          `<li class="scan-${f.state}">
+             <span class="scan-name">${escapeHtml(f.name)}</span>
+             <span class="scan-state">${STATE_LABELS[f.state] || f.state}</span>
+             <span class="scan-why">${escapeHtml(f.reason)}</span>
+           </li>`).join("")}</ul>`
+      : "";
+    return scan;
+  } catch (err) {
+    $("#scan-summary").textContent = `Could not check the folder: ${err.message}`;
+    $("#btn-queue-folder").disabled = true;
+    return null;
+  }
+}
+
+$("#btn-scan-folder").addEventListener("click", scanFolder);
+$("#opt-recursive").addEventListener("change", () => {
+  if (state.scan) scanFolder();
+});
+
+$("#btn-queue-folder").addEventListener("click", async () => {
+  if (!state.cwd) return;
+  const btn = $("#btn-queue-folder");
+  btn.disabled = true;
+  try {
+    const res = await api("/api/jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        paths: [state.cwd.path],
+        out_dir: $("#opt-outdir").value.trim() || null,
+        options: currentOptions(),
+        skip_done: true,
+        recursive: $("#opt-recursive").checked,
+      }),
+    });
+    const skipped = res.skipped_count
+      ? `, skipped ${res.skipped_count} already done` : "";
+    toast(`Queued ${res.jobs.length} file${res.jobs.length === 1 ? "" : "s"}${skipped}.`,
+          "ok");
+    await scanFolder();
+  } catch (err) {
+    toast(`Could not queue the folder: ${err.message}`, "error");
+    btn.disabled = false;
+  }
+});
+
 function renderSelection() {
   const count = state.selection.size;
   $("#selection-count").textContent = count;
@@ -453,10 +567,8 @@ $("#selection-list").addEventListener("click", (event) => {
 /* ==================================================================== submit */
 
 $("#btn-submit").addEventListener("click", async () => {
-  const formats = [];
-  if ($("#fmt-srt").checked) formats.push("srt");
-  if ($("#fmt-vtt").checked) formats.push("vtt");
-  if (!formats.length) return toast("Pick at least one output format.", "error");
+  const options = currentOptions();
+  if (!options.formats.length) return toast("Pick at least one output format.", "error");
 
   const btn = $("#btn-submit");
   btn.disabled = true;
@@ -466,26 +578,7 @@ $("#btn-submit").addEventListener("click", async () => {
       body: JSON.stringify({
         paths: Array.from(state.selection.keys()),
         out_dir: $("#opt-outdir").value.trim() || null,
-        options: {
-          profile: $("#opt-profile").value,
-          model: $("#opt-model").value,
-          language: $("#opt-language").value,
-          hotwords: $("#opt-hotwords").value,
-          batch_size: +$("#opt-batch").value,
-          beam_size: +$("#opt-beam").value,
-          formats,
-          romanize: $("#opt-romanize").checked,
-          keep_suppressed: $("#opt-keep-suppressed").checked,
-          // One control, three destinations: nothing, a cloud service, or
-          // the offline model. Only the chosen one is sent.
-          translate: translateMode() === "local",
-          cloud_provider:
-            translateMode() === "google" || translateMode() === "deepl"
-              ? translateMode() : "",
-          translate_engine: $("#opt-translate-engine").value,
-          translate_target: $("#opt-translate-target").value,
-          overwrite: $("#opt-overwrite").checked,
-        },
+        options,
       }),
     });
     toast(`Queued ${res.jobs.length} file${res.jobs.length === 1 ? "" : "s"}.`, "ok");

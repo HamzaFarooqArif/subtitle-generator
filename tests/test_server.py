@@ -129,6 +129,84 @@ def test_meta_reports_profiles_and_defaults(client):
     assert "max_chars_per_line" in data["defaults"]["cues"]
 
 
+def test_scan_reports_what_a_folder_still_needs(client, tmp_path):
+    from sgen.cues import Cue
+    from sgen.write import write_subtitles
+
+    (tmp_path / "one.mp4").write_bytes(b"x")
+    (tmp_path / "two.mp4").write_bytes(b"x")
+    write_subtitles([Cue(start=0.0, end=1.0, lines=["hi"])],
+                    tmp_path / "one", ("srt",), "en")
+
+    res = client.post("/api/scan", json={
+        "folder": str(tmp_path), "options": {"formats": ["srt"]}})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] == 2
+    assert data["counts"]["done"] == 1
+    assert data["counts"]["pending"] == 1
+    assert "already done" in data["summary"]
+
+
+def test_scan_rejects_a_path_that_is_not_a_folder(client, tmp_path):
+    lonely = tmp_path / "clip.mp4"
+    lonely.write_bytes(b"x")
+    assert client.post("/api/scan", json={"folder": str(lonely)}).status_code == 400
+
+
+def test_submitting_a_folder_skips_finished_files(client, tmp_path):
+    """The resumable path: queue a folder, and files that already have subtitles
+    for these settings are not queued again."""
+    from sgen.cues import Cue
+    from sgen.write import write_subtitles
+
+    for name in ("a.mp4", "b.mp4", "c.mp4"):
+        (tmp_path / name).write_bytes(b"x")
+    write_subtitles([Cue(start=0.0, end=1.0, lines=["hi"])],
+                    tmp_path / "a", ("srt",), "en")
+
+    res = client.post("/api/jobs", json={
+        "paths": [str(tmp_path)],
+        "options": {"formats": ["srt"], "model": "", "overwrite": False},
+        "skip_done": True,
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["skipped_count"] == 1
+    assert {Path(j["path"]).name for j in data["jobs"]} == {"b.mp4", "c.mp4"}
+
+    for job in data["jobs"]:
+        client.delete(f"/api/jobs/{job['id']}")
+
+
+def test_overwrite_beats_skip_done(client, tmp_path):
+    """"Redo completed work" has to mean it, even in folder mode."""
+    from sgen.cues import Cue
+    from sgen.write import write_subtitles
+
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    write_subtitles([Cue(start=0.0, end=1.0, lines=["hi"])],
+                    tmp_path / "a", ("srt",), "en")
+
+    res = client.post("/api/jobs", json={
+        "paths": [str(tmp_path)],
+        "options": {"formats": ["srt"], "overwrite": True},
+        "skip_done": True,
+    })
+    data = res.json()
+    assert data["skipped_count"] == 0
+    assert len(data["jobs"]) == 1
+    for job in data["jobs"]:
+        client.delete(f"/api/jobs/{job['id']}")
+
+
+def test_folder_mode_is_in_the_page(client):
+    body = client.get("/").text
+    assert 'id="btn-scan-folder"' in body
+    assert 'id="btn-queue-folder"' in body
+    assert 'id="opt-recursive"' in body
+
+
 def test_providers_report_which_languages_each_engine_reaches(tmp_path, monkeypatch):
     """The UI builds its language list from this, so it has to be the truth.
 

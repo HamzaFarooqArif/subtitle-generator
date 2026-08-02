@@ -44,6 +44,33 @@ stays loaded between jobs), with live per-stage progress streamed over SSE.
 Finished files, and everything transcribed in earlier sessions, are listed
 underneath with a **Translate…** button.
 
+**Folder mode** sits under the file browser: **Check this folder** reports what
+it still needs, **Transcribe folder** queues only that. Interrupt it however you
+like — close the app, restart the machine — and run it again; it continues.
+
+Whether a video is finished is decided from **the subtitle files next to it**,
+never from anything the app remembers, because a job list in memory cannot
+survive a reboot and a database can disagree with the disk. Three things make
+that safe:
+
+- subtitles are written to a temporary file and renamed into place, so a file
+  that exists is a file that finished
+- the language is in the filename, so a translation that was requested and never
+  produced shows up as an absence — `clip.de.srt` without `clip.en.srt`
+- a subtitle file with no readable final cue is treated as **interrupted** and
+  produced again rather than trusted
+
+```
+4 media file(s) · 2 already done · 1 needing translation only · 1 interrupted, will be redone
+  one.mp4      done      en subtitles present
+  four.wav     done      de, en subtitles present
+  three.mp4    damaged   1 subtitle file(s) look truncated — probably interrupted
+  two.mp4      translate transcribed as de but no en translation
+```
+
+The CLI resumes identically: `python -m sgen run "D:\videos"` skips finished
+files and says so; `--no-resume` redoes everything.
+
 **Translate** — every transcript you have, each with a Translate button:
 Google or DeepL if you have a key, or the paste-it-yourself round trip if you
 don't. Works from the stored transcript, so no GPU and no second pass.

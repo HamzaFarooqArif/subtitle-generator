@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from .. import settings
 from ..config import WORK_DIR, Config, enforce_offline
-from .jobs import Job, JobQueue, build_config
+from .jobs import Job, JobQueue, cloud_provider, build_config
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +92,18 @@ class SubmitRequest(BaseModel):
     paths: list[str]
     out_dir: str | None = None
     options: dict[str, Any] = Field(default_factory=dict)
+    # Skip files that already have complete subtitles for these settings. What
+    # counts as complete is decided from the files on disk, so closing the app or
+    # restarting the machine loses nothing.
+    skip_done: bool = False
+    recursive: bool = True
+
+
+class ScanRequest(BaseModel):
+    folder: str
+    options: dict[str, Any] = Field(default_factory=dict)
+    out_dir: str | None = None
+    recursive: bool = True
 
 
 class RegateRequest(BaseModel):
@@ -264,24 +276,62 @@ def create_app() -> FastAPI:
     def list_jobs() -> dict[str, Any]:
         return {"jobs": queue.list()}
 
+    def _translate_target_for(options: dict[str, Any]) -> str | None:
+        """The language a translation was asked for, or None.
+
+        Needed to judge "finished": a Russian file with only Russian subtitles is
+        done if nothing asked for English, and unfinished if something did.
+        """
+        cfg = build_config(options)
+        if cloud_provider(options) or cfg.translate_to_english:
+            return (options.get("translate_target") or cfg.translate_target or "en").lower()
+        return None
+
+    @app.post("/api/scan")
+    def scan(req: ScanRequest) -> dict[str, Any]:
+        """What a folder still needs, judged from the files in it."""
+        from .. import resume
+
+        folder = Path(req.folder)
+        try:
+            result = resume.scan_folder(
+                folder,
+                build_config(req.options),
+                out_dir=_out_dir(req.out_dir),
+                translate_target=_translate_target_for(req.options),
+                recursive=req.recursive,
+            )
+        except NotADirectoryError as exc:
+            raise HTTPException(400, f"not a folder: {exc}") from exc
+        payload = result.to_dict()
+        payload["summary"] = resume.summarise(result)
+        return payload
+
     @app.post("/api/jobs")
     def submit(req: SubmitRequest) -> dict[str, Any]:
+        from .. import resume
+
         out_dir = _out_dir(req.out_dir)
-        expanded: list[Path] = []
-        for raw in req.paths:
-            p = Path(raw)
-            if p.is_dir():
-                expanded.extend(
-                    q for q in sorted(p.rglob("*"))
-                    if q.is_file() and q.suffix.lower() in MEDIA_SUFFIXES
-                )
-            elif p.is_file():
-                expanded.append(p)
+        expanded = resume.iter_media([Path(p) for p in req.paths], req.recursive)
         if not expanded:
             raise HTTPException(400, "no media files found in selection")
 
+        skipped: list[dict[str, Any]] = []
+        if req.skip_done and not req.options.get("overwrite"):
+            cfg = build_config(req.options)
+            target = _translate_target_for(req.options)
+            keep: list[Path] = []
+            for source in expanded:
+                status = resume.classify(
+                    source, cfg, out_dir=out_dir, translate_target=target
+                )
+                (keep if status.needs_work else skipped).append(
+                    source if status.needs_work else status.to_dict()
+                )
+            expanded = keep
+
         created = [queue.submit(p, out_dir, req.options).to_dict() for p in expanded]
-        return {"jobs": created}
+        return {"jobs": created, "skipped": skipped, "skipped_count": len(skipped)}
 
     @app.delete("/api/jobs/{job_id}")
     def cancel(job_id: str) -> dict[str, Any]:

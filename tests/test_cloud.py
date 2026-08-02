@@ -300,7 +300,7 @@ def test_an_unexpected_crash_is_contained(cues, tmp_path, monkeypatch):
     assert "RuntimeError" in note
 
 
-def test_no_cloud_provider_means_no_request(tmp_path):
+def test_nocloud_provider_means_no_request(tmp_path):
     """The default must stay offline-only: this is what sends text to a service."""
     from sgen.server.jobs import build_config
 
@@ -321,39 +321,39 @@ def auto_settings(tmp_path, monkeypatch):
 
 
 def test_the_setting_turns_translation_on_without_asking(auto_settings):
-    from sgen.server.jobs import _cloud_provider
+    from sgen.server.jobs import cloud_provider
 
     auto_settings.write_text(
         "defaults:\n  translate:\n    auto: true\n    provider: deepl\n",
         encoding="utf-8")
-    assert _cloud_provider({}) == "deepl"
+    assert cloud_provider({}) == "deepl"
 
 
 def test_off_by_default(auto_settings):
-    from sgen.server.jobs import _cloud_provider
+    from sgen.server.jobs import cloud_provider
 
-    assert _cloud_provider({}) == ""
+    assert cloud_provider({}) == ""
 
 
 def test_an_explicit_choice_in_the_request_wins(auto_settings):
-    from sgen.server.jobs import _cloud_provider
+    from sgen.server.jobs import cloud_provider
 
     auto_settings.write_text(
         "defaults:\n  translate:\n    auto: true\n    provider: deepl\n",
         encoding="utf-8")
-    assert _cloud_provider({"cloud_provider": "google"}) == "google"
+    assert cloud_provider({"cloud_provider": "google"}) == "google"
     # "transcribe only", chosen deliberately for this run, must not be overridden.
-    assert _cloud_provider({"cloud_provider": ""}) == ""
+    assert cloud_provider({"cloud_provider": ""}) == ""
 
 
 def test_local_provider_does_not_trigger_a_cloud_request(auto_settings):
     """`provider: local` means the offline model, not a service."""
-    from sgen.server.jobs import _cloud_provider, build_config
+    from sgen.server.jobs import cloud_provider, build_config
 
     auto_settings.write_text(
         "defaults:\n  translate:\n    auto: true\n    provider: local\n",
         encoding="utf-8")
-    assert _cloud_provider({}) == ""
+    assert cloud_provider({}) == ""
     assert build_config({}).translate_to_english is True
 
 
