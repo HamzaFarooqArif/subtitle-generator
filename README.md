@@ -78,6 +78,11 @@ the same controls, each offering *as in All files (…)* so an override is visib
 an exception rather than a separate set of settings. Anything left inherited
 follows the first tab.
 
+**Nothing is written until you press Save** (or Ctrl+S), and leaving with unsaved
+edits asks first — switching tabs, opening another file, changing folder, closing
+the page, or starting a run, since a run would not use them. Cancel keeps you
+where you are; **Discard changes** puts the form back.
+
 They are saved in `sgen.folder.yaml` **beside the videos**, for the same reason
 resumability reads the subtitle files: state in the app cannot survive a restart,
 and a database can disagree with the disk. It is meant to be hand-editable — for

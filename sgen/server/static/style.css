@@ -396,6 +396,11 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
   padding: 0 5px;
   font-size: 10px;
 }
+/* Unsaved edits are worth a colour: this is the state where closing the tab
+   loses something. */
+.stab-count.unsaved { background: var(--warn); }
+.warn-text { color: var(--warn); }
+.file-actions { margin-top: 14px; align-items: center; }
 #settings-file .field select, #settings-file .field input { width: 100%; }
 
 .scan-own-line {

@@ -276,13 +276,16 @@
           <p class="hint" id="f-translate-hint"></p>
         </div>
 
-        <div class="inline">
+        <div class="inline file-actions">
+          <button class="btn primary" id="btn-file-save" disabled>Save</button>
+          <button class="btn ghost tiny hidden" id="btn-file-revert">Discard changes</button>
           <button class="btn ghost tiny" id="btn-file-clear">Use the All files settings</button>
-          <span class="hint" id="file-settings-status"></span>
         </div>
+        <p class="hint" id="file-settings-status"></p>
 
         <p class="hint">
-          Saved as you change them, in
+          Nothing here takes effect until <strong>Save</strong>, and you will be
+          asked before leaving with unsaved changes. Stored in
           <code id="file-settings-path">sgen.folder.yaml</code> beside the videos.
           Model, output formats and output folder are properties of the run, not
           of one video, so they stay on <strong>All files</strong>.

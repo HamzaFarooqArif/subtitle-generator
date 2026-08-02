@@ -13,6 +13,7 @@ const state = {
   excluded: new Set(),    // folder-mode: unfinished files the user unticked
   included: new Set(),    // folder-mode: finished files the user asked to redo
   fileSettings: null,     // path of the file open on the Settings panel's 2nd tab
+  fileDirty: false,       // …and whether it has edits that are not written yet
   translate: { contentId: null, name: "" },
   tune: { contentId: null, values: {}, timer: null },
 };
@@ -415,6 +416,9 @@ $("#opt-translate-target").addEventListener("change", () => {
 /* =================================================================== browser */
 
 async function browse(path) {
+  // Leaving the folder closes the file's tab with it. Checked before the fetch,
+  // so cancelling actually leaves you where you were.
+  if (path && path !== state.cwd?.path && !leaveFileSettings("open another folder")) return;
   let data;
   try {
     data = await api(`/api/browse?path=${encodeURIComponent(path || "")}`);
@@ -782,10 +786,16 @@ async function setOverride(path, values) {
  */
 $("#scan-detail").addEventListener("click", (event) => {
   const open = event.target.closest("[data-open-settings]");
-  if (open) openFileSettings(decodeURIComponent(open.dataset.openSettings));
+  if (!open) return;
+  const path = decodeURIComponent(open.dataset.openSettings);
+  // Opening another file abandons this one's edits, so ask first.
+  if (path !== state.fileSettings && !leaveFileSettings("open another file")) return;
+  openFileSettings(path);
 });
 
-$("#tab-global").addEventListener("click", () => showSettingsTab("global"));
+$("#tab-global").addEventListener("click", () => {
+  if (leaveFileSettings("switch tabs")) showSettingsTab("global");
+});
 $("#tab-file").addEventListener("click", () => showSettingsTab("file"));
 
 // "as in All files (music)" has to keep telling the truth when All files changes.
@@ -805,6 +815,7 @@ function openFileSettings(path) {
   const file = state.scan?.files.find((f) => f.path === path);
   if (!file) return;
   state.fileSettings = path;
+  state.fileDirty = false;
   renderFileSettings();
   showSettingsTab("file");
   // Mark the row it belongs to, so the two panels are visibly connected.
@@ -814,9 +825,39 @@ function openFileSettings(path) {
 
 function closeFileSettings() {
   state.fileSettings = null;
+  state.fileDirty = false;
   $("#tab-file").classList.add("hidden");
   showSettingsTab("global");
 }
+
+/* --------------------------------------------------------- unsaved changes
+
+   Settings used to be written the moment a dropdown moved, which made a misclick
+   permanent and silent. Now the tab is a form: nothing reaches the folder file
+   until Save, and every way out of the tab asks first. Cancel keeps you here —
+   the safe answer is the one that does nothing.                              */
+
+/** True to proceed. Asks only when there is something to lose. */
+function leaveFileSettings(what) {
+  if (!state.fileDirty) return true;
+  const name = openFile()?.name || "this file";
+  const ok = window.confirm(
+    `${name} has unsaved settings.\n\n`
+    + `OK discards them and continues to ${what}. Cancel stays here.`,
+  );
+  if (ok) {
+    state.fileDirty = false;
+    renderFileSettings();
+  }
+  return ok;
+}
+
+// Closing the tab or reloading is the one case the page cannot handle itself.
+window.addEventListener("beforeunload", (event) => {
+  if (!state.fileDirty) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 /** The file currently open on the second tab, as the scan last reported it. */
 function openFile() {
@@ -839,18 +880,16 @@ const TRANSLATE_LABELS = {
 function renderFileSettings() {
   const file = openFile();
   if (!file) return closeFileSettings();
-  const own = file.overrides || {};
+  const saved = file.overrides || {};
+  // While there are unsaved edits, the form shows those — a re-scan or a change
+  // on the other tab must not quietly undo what you were in the middle of.
+  const own = state.fileDirty ? fileSettingValues() : saved;
   const inherit = (label) => `as in All files (${label})`;
 
   $("#file-settings-name").textContent = file.name;
   $("#tab-file-name").textContent = file.name;
   $("#tab-file").title = file.path;
   $("#tab-file").classList.remove("hidden");
-
-  const names = ownNames(own);
-  const count = $("#tab-file-count");
-  count.textContent = Object.keys(own).length || "";
-  count.classList.toggle("hidden", !names);
 
   fillSelect($("#f-profile"), [
     ["", inherit($("#opt-profile").value)],
@@ -897,9 +936,36 @@ function renderFileSettings() {
   $("#f-translate-hint").textContent = own.translate === "none"
     ? "This file is left in its own language, whatever All files says."
     : "";
-  $("#btn-file-clear").classList.toggle("hidden", !names);
-  $("#file-settings-status").textContent = names ? `its own: ${names}` : "nothing set here yet";
   $("#file-settings-path").textContent = state.scan?.config_file || "sgen.folder.yaml";
+  updateFileSaveState();
+}
+
+/** The Save button, the discard button, the tab badge and the status line. */
+function updateFileSaveState() {
+  const saved = openFile()?.overrides || {};
+  const dirty = state.fileDirty;
+  const savedNames = ownNames(saved);
+
+  $("#btn-file-save").disabled = !dirty;
+  $("#btn-file-save").textContent = dirty ? "Save" : "Saved";
+  $("#btn-file-revert").classList.toggle("hidden", !dirty);
+  $("#btn-file-clear").classList.toggle("hidden", !savedNames && !dirty);
+
+  const badge = $("#tab-file-count");
+  badge.textContent = dirty ? "unsaved" : (Object.keys(saved).length || "");
+  badge.classList.toggle("unsaved", dirty);
+  badge.classList.toggle("hidden", !dirty && !savedNames);
+
+  $("#file-settings-status").textContent = dirty
+    ? "Not saved yet — Save applies these, Discard puts them back."
+    : (savedNames ? `Saved: ${savedNames}.` : "Nothing set here — this file follows All files.");
+  $("#file-settings-status").classList.toggle("warn-text", dirty);
+}
+
+/** Two sets of overrides are the same when they say the same thing. */
+function sameSettings(a, b) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].every((key) => a[key] === b[key]);
 }
 
 function fillSelect(select, options, selected) {
@@ -923,33 +989,63 @@ function fileSettingValues() {
   return values;
 }
 
-let hotwordsTimer = null;
+/** Any edit marks the form dirty; nothing is written until Save. */
+function noteFileEdit() {
+  if (!state.fileSettings) return;
+  const saved = openFile()?.overrides || {};
+  const dirty = !sameSettings(fileSettingValues(), saved);
+  if (dirty === state.fileDirty) return;
+  state.fileDirty = dirty;
+  renderFileSettings();
+}
 
 $("#settings-file").addEventListener("change", (event) => {
-  if (event.target.closest("[data-file-setting]")) saveFileSettings();
+  if (event.target.closest("[data-file-setting]")) noteFileEdit();
+});
+$("#f-hotwords").addEventListener("input", noteFileEdit);
+$("#f-hotwords").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") saveFileSettings();
 });
 
-// Typing is saved on a pause rather than per keystroke: one write per name, not
-// one per letter.
-$("#f-hotwords").addEventListener("input", () => {
-  clearTimeout(hotwordsTimer);
-  hotwordsTimer = setTimeout(saveFileSettings, 600);
+// Ctrl+S is what hands reach for in a form that has a Save button.
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s"
+      && state.fileSettings && state.fileDirty) {
+    event.preventDefault();
+    saveFileSettings();
+  }
 });
+
+$("#btn-file-save").addEventListener("click", () => saveFileSettings());
 
 async function saveFileSettings() {
   const path = state.fileSettings;
-  if (!path) return;
-  $("#file-settings-status").textContent = "saving…";
-  if (await setOverride(path, fileSettingValues())) renderFileSettings();
+  if (!path || !state.fileDirty) return;
+  const values = fileSettingValues();
+  $("#btn-file-save").disabled = true;
+  $("#btn-file-save").textContent = "Saving…";
+  if (await setOverride(path, values)) {
+    state.fileDirty = false;
+    toast(Object.keys(values).length
+      ? `Saved: ${ownNames(values)}.`
+      : "Saved — this file follows All files.", "ok");
+  }
+  renderFileSettings();
 }
 
-$("#btn-file-clear").addEventListener("click", async () => {
-  const path = state.fileSettings;
-  if (!path) return;
-  if (await setOverride(path, {})) {
-    renderFileSettings();
-    toast("Back on the All files settings.", "ok");
-  }
+$("#btn-file-revert").addEventListener("click", () => {
+  state.fileDirty = false;
+  renderFileSettings();
+  toast("Changes discarded.", "");
+});
+
+// Puts every control back to "as in All files" — as an edit, not as a write.
+// Everything on this tab now goes through Save, including undoing everything.
+$("#btn-file-clear").addEventListener("click", () => {
+  if (!state.fileSettings) return;
+  for (const control of $$("#settings-file [data-file-setting]")) control.value = "";
+  noteFileEdit();
+  if (!state.fileDirty) toast("Already following All files.", "");
 });
 
 /**
@@ -1088,6 +1184,9 @@ $("#selection-list").addEventListener("click", (event) => {
 $("#btn-submit").addEventListener("click", async () => {
   const options = currentOptions();
   if (!options.formats.length) return toast("Pick at least one output format.", "error");
+  // Unsaved per-file settings would not be used by the run — the worst moment to
+  // find that out is after the GPU has finished.
+  if (!leaveFileSettings("start transcribing")) return;
 
   const folderMode = state.selection.size === 0;
   if (folderMode && !state.cwd) return;

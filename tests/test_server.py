@@ -727,6 +727,24 @@ def test_one_files_settings_live_in_the_settings_panel(client):
         assert f'data-file-setting="{key}"' in body, f"{key} has no control"
 
 
+def test_one_files_settings_are_saved_deliberately(client):
+    """They used to be written the moment a dropdown moved, so a misclick was
+    permanent and silent. The tab is a form: Save commits, and leaving with
+    unsaved edits asks first."""
+    body = client.get("/").text
+    assert 'id="btn-file-save"' in body
+    assert 'id="btn-file-revert"' in body
+    assert "until <strong>Save</strong>" in body
+
+    js = client.get("/static/app.js").text
+    assert "beforeunload" in js, "closing the page has to be caught too"
+    assert "leaveFileSettings" in js
+    # Every way out of the tab goes through the guard.
+    for exit_point in ("switch tabs", "open another file", "open another folder",
+                       "start transcribing"):
+        assert exit_point in js, f"leaving via {exit_point!r} is unguarded"
+
+
 # --------------------------------------------------------------------------- #
 # regate — needs a real sidecar from a prior run
 # --------------------------------------------------------------------------- #
