@@ -362,8 +362,52 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
 .scan-name { font-family: var(--mono); word-break: break-all; }
 .scan-state { color: var(--text-faint); white-space: nowrap; }
 .scan-why { grid-column: 1 / -1; color: var(--text-faint); }
-.scan-own { grid-column: 1 / -1; margin-top: 4px; }
-.scan-own summary { cursor: pointer; color: var(--text-faint); font-size: 10px; }
+/* ------------------------------------------- settings: all files / this file */
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.stab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-faint);
+  padding: 6px 10px;
+  margin-bottom: -1px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* A filename can be long; the tab must not push the panel wide. */
+  max-width: 220px;
+}
+.stab > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stab:hover { color: var(--text); }
+.stab.active { color: var(--text); border-bottom-color: var(--accent); }
+.stab-count {
+  flex: none;
+  background: var(--accent-dim);
+  color: var(--bg);
+  border-radius: 8px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+#settings-file .field select, #settings-file .field input { width: 100%; }
+
+.scan-own-line {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+.scan-own-note { color: var(--accent-dim); font-size: 10px; }
+/* The row whose settings are open on the panel's second tab. */
+.scan-open { background: var(--bg); }
 .scan-own-row {
   display: flex;
   flex-wrap: wrap;

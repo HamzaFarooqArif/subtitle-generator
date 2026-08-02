@@ -713,6 +713,20 @@ def test_the_page_offers_to_forget_and_says_what_that_deletes(client):
     assert "subtitle files" in body, "it must be clear the .srt files survive"
 
 
+def test_one_files_settings_live_in_the_settings_panel(client):
+    """Three controls wedged into a list row could reach half of what can vary
+    per file, and looked nothing like the panel that sets the same things for
+    everything. The second tab is the same panel, for one file."""
+    body = client.get("/").text
+    assert 'id="tab-global"' in body and 'id="tab-file"' in body
+    assert 'id="settings-global"' in body and 'id="settings-file"' in body
+    # Everything folderconf accepts per file is reachable there.
+    from sgen import folderconf
+
+    for key in folderconf.ALLOWED:
+        assert f'data-file-setting="{key}"' in body, f"{key} has no control"
+
+
 # --------------------------------------------------------------------------- #
 # regate — needs a real sidecar from a prior run
 # --------------------------------------------------------------------------- #

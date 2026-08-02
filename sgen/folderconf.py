@@ -54,7 +54,7 @@ HEADER = """\
 # hand than to click through for a large batch.
 #
 # profile:          home-video | music | verbatim
-# language:         "" detects; or a code like hi, de, ru
+# language:         auto detects; or a code like hi, de, ru
 # hotwords:         names in this file, comma-separated
 # romanize:         true also writes Latin-script subtitles (नमस्ते -> namaste)
 # translate:        none | deepl | google | local
@@ -167,6 +167,11 @@ def apply_to_options(base: dict[str, Any], override: dict[str, Any]) -> dict[str
     for key in ("profile", "language", "hotwords", "translate_target"):
         if key in override:
             options[key] = override[key]
+    # An empty value cannot be stored — it is how "no override" is spelled — so
+    # "auto" is what lets one file detect its language while the app has one
+    # pinned for everything else.
+    if str(options.get("language", "")).lower() in ("auto", "detect"):
+        options["language"] = ""
     if "romanize" in override:
         options["romanize"] = override["romanize"]
 

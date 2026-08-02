@@ -85,6 +85,18 @@
 
     <div class="panel">
       <h2>2 · Settings</h2>
+
+      <!-- One file's settings belong in the settings panel, not squeezed into a
+           row of the list. The second tab appears when a file is opened. -->
+      <div class="settings-tabs" role="tablist">
+        <button class="stab active" id="tab-global" type="button">All files</button>
+        <button class="stab hidden" id="tab-file" type="button">
+          <span id="tab-file-name">this file</span>
+          <span class="stab-count hidden" id="tab-file-count"></span>
+        </button>
+      </div>
+
+      <div id="settings-global">
       <p class="hint">
         These start from <code id="settings-path">settings.local.yaml</code>.
         Edit that file to change what they start as — it also holds the API keys.
@@ -214,6 +226,68 @@
           <label class="check"><input type="checkbox" id="opt-overwrite"> Redo completed work</label>
         </div>
       </details>
+      </div><!-- /settings-global -->
+
+      <!-- ============ one file's settings ============ -->
+      <div id="settings-file" class="hidden">
+        <p class="hint">
+          For <strong id="file-settings-name"></strong> only. Everything left on
+          <em>as in All files</em> follows the other tab, so this stays as short
+          as the exceptions really are.
+        </p>
+
+        <div class="field">
+          <label for="f-profile">Profile</label>
+          <select id="f-profile" data-file-setting="profile"></select>
+          <p class="hint" id="f-profile-hint"></p>
+        </div>
+
+        <div class="field">
+          <label for="f-language">Language</label>
+          <select id="f-language" data-file-setting="language"></select>
+          <p class="hint">
+            Pin only when the whole file is one language and detection is getting
+            it wrong.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="f-hotwords">Names in this file</label>
+          <input type="text" id="f-hotwords" data-file-setting="hotwords"
+                 placeholder="Thomas, Oaxaca, Kreuzberg">
+          <p class="hint">
+            Replaces the list on the other tab for this file. Blank follows it.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="f-romanize">Latin-script subtitles</label>
+          <select id="f-romanize" data-file-setting="romanize"></select>
+          <p class="hint">नमस्ते → <code>namaste</code>, as a second file. Indic scripts only.</p>
+        </div>
+
+        <div class="field">
+          <label for="f-translate">Also translate</label>
+          <select id="f-translate" data-file-setting="translate"></select>
+          <div class="subfield" id="f-translate-opts">
+            <label for="f-translate-target">Into</label>
+            <select id="f-translate-target" data-file-setting="translate_target"></select>
+          </div>
+          <p class="hint" id="f-translate-hint"></p>
+        </div>
+
+        <div class="inline">
+          <button class="btn ghost tiny" id="btn-file-clear">Use the All files settings</button>
+          <span class="hint" id="file-settings-status"></span>
+        </div>
+
+        <p class="hint">
+          Saved as you change them, in
+          <code id="file-settings-path">sgen.folder.yaml</code> beside the videos.
+          Model, output formats and output folder are properties of the run, not
+          of one video, so they stay on <strong>All files</strong>.
+        </p>
+      </div>
 
       <button class="btn primary big" id="btn-submit" disabled>Transcribe 0 files</button>
     </div>

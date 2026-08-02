@@ -12,6 +12,7 @@ const state = {
   scan: null,             // last folder scan: what still needs doing
   excluded: new Set(),    // folder-mode: unfinished files the user unticked
   included: new Set(),    // folder-mode: finished files the user asked to redo
+  fileSettings: null,     // path of the file open on the Settings panel's 2nd tab
   translate: { contentId: null, name: "" },
   tune: { contentId: null, values: {}, timer: null },
 };
@@ -433,6 +434,7 @@ async function browse(path) {
     state.scan = null;
     state.excluded.clear();
     state.included.clear();
+    closeFileSettings();   // it belonged to a file in the folder we just left
     $("#scan-detail").innerHTML = "";
     $("#scan-summary").textContent =
       "Select nothing and the button below takes this whole folder, skipping "
@@ -558,6 +560,7 @@ async function scanFolder({ quiet = false } = {}) {
 
     // The list first: the button's label counts the boxes in it.
     if (!(quiet && patchScanList(scan))) renderScanList(scan);
+    if (state.fileSettings) renderFileSettings();
     updateSubmitButton();
     return scan;
   } catch (err) {
@@ -599,9 +602,11 @@ function renderScanList(scan) {
     ${problems}
     <ul class="scan-list">${scan.files.map((f) => scanRowHtml(f)).join("")}</ul>
     <p class="hint">
-      Per-file choices are saved in <code>${escapeHtml(scan.config_file || "sgen.folder.yaml")}</code>,
-      beside the videos — so they survive restarts, move with the folder, and can
-      be edited by hand for a large batch.
+      <strong>Settings…</strong> opens that file on its own tab in the settings
+      panel. Anything you change there is saved in
+      <code>${escapeHtml(scan.config_file || "sgen.folder.yaml")}</code> beside the
+      videos, so it survives restarts, moves with the folder, and can be edited by
+      hand for a large batch.
     </p>`;
   restoreScanView(keep);
 }
@@ -624,11 +629,20 @@ function restoreScanView(keep) {
   if (list) list.scrollTop = keep.scroll;
 }
 
+/**
+ * A row in the scan list.
+ *
+ * The row says what will happen to the file and offers a way in. It does not
+ * try to be a settings form: three controls squeezed into a list row were
+ * cramped, could only reach half the settings, and put the same choice in two
+ * different-looking places. The button opens the real thing.
+ */
 function scanRowHtml(f) {
   const path = encodeURIComponent(f.path);
   const own = f.overrides || {};
-  const custom = Object.keys(own).length;
-  return `<li class="scan-${f.state}${custom ? " scan-custom" : ""}" data-path="${path}">
+  const names = ownNames(own);
+  const open = state.fileSettings === f.path ? " scan-open" : "";
+  return `<li class="scan-${f.state}${names ? " scan-custom" : ""}${open}" data-path="${path}">
       <label class="check scan-pick">
         <input type="checkbox" data-scan-path="${path}"
           ${scanRowTicked(f) ? "checked" : ""}>
@@ -636,27 +650,10 @@ function scanRowHtml(f) {
       </label>
       <span class="scan-state">${STATE_LABELS[f.state] || f.state}</span>
       <span class="scan-why">${escapeHtml(f.reason)}</span>
-      <details class="scan-own"${custom ? " open" : ""}>
-        <summary>${ownSummary(custom)}</summary>
-        <div class="scan-own-row">
-          <label>Profile
-            <select data-override="profile" data-path="${path}">
-              ${profileOptions(own.profile)}
-            </select>
-          </label>
-          <label>Translate
-            <select data-override="translate" data-path="${path}">
-              ${translateOptions(own.translate)}
-            </select>
-          </label>
-          <label class="check">
-            <input type="checkbox" data-override="romanize" data-path="${path}"
-              ${own.romanize ? "checked" : ""}>
-            Latin script
-          </label>
-          ${custom ? clearOverrideHtml(path) : ""}
-        </div>
-      </details>
+      <span class="scan-own-line">
+        <button class="btn ghost tiny" data-open-settings="${path}">Settings…</button>
+        <span class="scan-own-note">${names ? `its own: ${escapeHtml(names)}` : ""}</span>
+      </span>
     </li>`;
 }
 
@@ -667,19 +664,33 @@ function scanRowTicked(f) {
     : !state.excluded.has(f.path);
 }
 
-const ownSummary = (custom) =>
-  custom ? `settings for this file (${custom})` : "settings for this file";
+// Naming the settings beats counting them: "its own: profile, translate" says
+// what is different without opening anything.
+const SETTING_NAMES = {
+  profile: "profile",
+  language: "language",
+  hotwords: "names",
+  romanize: "Latin script",
+  translate: "translation",
+  translate_target: "target language",
+};
 
-const clearOverrideHtml = (path) =>
-  `<button class="btn ghost tiny" data-clear-override="${path}">Use the panel settings</button>`;
+// Listed in the order they appear on the tab, not the order the YAML happens to
+// store them in.
+const ownNames = (own) =>
+  Object.keys(SETTING_NAMES)
+    .filter((key) => key in (own || {}))
+    .map((key) => SETTING_NAMES[key])
+    .join(", ");
 
 // Only offered when there is something to undo, so the button is never a decoy —
-// and it names the count, because it discards work you did.
+// and it names how many files, because it discards work you did. "3 files" and
+// not "(3)": the same bare number one line down counts settings, not files.
 function resetButtonHtml(scan) {
   const custom = scan.files.filter((f) => Object.keys(f.overrides || {}).length).length;
   return custom
     ? `<button class="btn ghost tiny" id="btn-reset-overrides">
-         Reset per-file settings (${custom})</button>`
+         Reset ${custom} file${custom === 1 ? "" : "s"} to All files</button>`
     : "";
 }
 
@@ -723,27 +734,16 @@ function patchScanList(scan) {
 }
 
 function patchScanRow(li, f) {
-  const path = li.dataset.path;
   const own = f.overrides || {};
-  const custom = Object.keys(own).length;
+  const names = ownNames(own);
+  const open = state.fileSettings === f.path ? " scan-open" : "";
 
-  li.className = `scan-${f.state}${custom ? " scan-custom" : ""}`;
+  li.className = `scan-${f.state}${names ? " scan-custom" : ""}${open}`;
   li.querySelector(".scan-state").textContent = STATE_LABELS[f.state] || f.state;
   li.querySelector(".scan-why").textContent = f.reason;
-  li.querySelector(".scan-own > summary").textContent = ownSummary(custom);
-  if (custom) li.querySelector("details.scan-own").open = true;
-
-  // Show what was actually saved, so a rejected value cannot look accepted.
-  set(li.querySelector('[data-override="profile"]'), "value", own.profile || "");
-  set(li.querySelector('[data-override="translate"]'), "value", own.translate || "");
-  set(li.querySelector('[data-override="romanize"]'), "checked", !!own.romanize);
+  // Naming what is different is the row's whole job now the controls have moved.
+  li.querySelector(".scan-own-note").textContent = names ? `its own: ${names}` : "";
   set(li.querySelector("input[data-scan-path]"), "checked", scanRowTicked(f));
-
-  // The per-row escape hatch arrives with the first override and goes with the last.
-  const row = li.querySelector(".scan-own-row");
-  const clear = row.querySelector("[data-clear-override]");
-  if (custom && !clear) row.insertAdjacentHTML("beforeend", clearOverrideHtml(path));
-  if (!custom && clear) clear.remove();
 }
 
 /** Assign only on a real change: writing to a live control can disturb it. */
@@ -751,30 +751,7 @@ function set(el, prop, value) {
   if (el && el[prop] !== value) el[prop] = value;
 }
 
-// "" means "whatever the settings panel says", which is the common case.
-const TRANSLATE_CHOICES = [
-  ["", "as in settings"],
-  ["none", "no translation"],
-  ["deepl", "DeepL"],
-  ["google", "Google"],
-  ["local", "offline model"],
-];
-
-function translateOptions(selected) {
-  return TRANSLATE_CHOICES.map(([value, label]) =>
-    `<option value="${value}"${(selected || "") === value ? " selected" : ""}>${label}</option>`
-  ).join("");
-}
-
-function profileOptions(selected) {
-  const profiles = state.meta?.profiles || [];
-  return [`<option value=""${!selected ? " selected" : ""}>as in settings</option>`]
-    .concat(profiles.map((p) =>
-      `<option value="${p}"${p === selected ? " selected" : ""}>${p}</option>`))
-    .join("");
-}
-
-/** Write one file's override to the folder's config file, then re-scan. */
+/** Write one file's overrides to the folder's config file, then re-scan. */
 async function setOverride(path, values) {
   try {
     await api("/api/folder-config", {
@@ -785,36 +762,194 @@ async function setOverride(path, values) {
     // finished — but quietly, patching the rows where they are. A rebuild here
     // scrolled the page back to the top after every choice.
     await scanFolder({ quiet: true });
+    return true;
   } catch (err) {
     toast(`Could not save that file's settings: ${err.message}`, "error");
+    return false;
   }
 }
 
-/** Collect all three controls for a row, so one file's settings stay consistent. */
-function rowOverrides(path) {
-  const pick = (name) =>
-    document.querySelector(`[data-override="${name}"][data-path="${path}"]`);
+/* ======================================================= one file's settings */
+
+/**
+ * Per-file settings live in the settings panel, on their own tab.
+ *
+ * They used to be three controls inside a row of the scan list. That was cramped
+ * enough to reach only half of what can vary per file, and it put the same
+ * decision in two places that looked nothing like each other. Here they are the
+ * same controls in the same panel as everything else, each one able to say "as
+ * in All files" — which is what an override actually is.
+ */
+$("#scan-detail").addEventListener("click", (event) => {
+  const open = event.target.closest("[data-open-settings]");
+  if (open) openFileSettings(decodeURIComponent(open.dataset.openSettings));
+});
+
+$("#tab-global").addEventListener("click", () => showSettingsTab("global"));
+$("#tab-file").addEventListener("click", () => showSettingsTab("file"));
+
+// "as in All files (music)" has to keep telling the truth when All files changes.
+$("#settings-global").addEventListener("change", () => {
+  if (state.fileSettings) renderFileSettings();
+});
+
+function showSettingsTab(which) {
+  const onFile = which === "file" && !!state.fileSettings;
+  $("#settings-global").classList.toggle("hidden", onFile);
+  $("#settings-file").classList.toggle("hidden", !onFile);
+  $("#tab-global").classList.toggle("active", !onFile);
+  $("#tab-file").classList.toggle("active", onFile);
+}
+
+function openFileSettings(path) {
+  const file = state.scan?.files.find((f) => f.path === path);
+  if (!file) return;
+  state.fileSettings = path;
+  renderFileSettings();
+  showSettingsTab("file");
+  // Mark the row it belongs to, so the two panels are visibly connected.
+  if (state.scan) patchScanList(state.scan);
+  find("#settings-file")?.scrollIntoView({ block: "nearest" });
+}
+
+function closeFileSettings() {
+  state.fileSettings = null;
+  $("#tab-file").classList.add("hidden");
+  showSettingsTab("global");
+}
+
+/** The file currently open on the second tab, as the scan last reported it. */
+function openFile() {
+  return state.scan?.files.find((f) => f.path === state.fileSettings) || null;
+}
+
+const langName = (code) =>
+  LANGUAGES.find(([c]) => c === code)?.[1] || code || "detect automatically";
+
+const TRANSLATE_LABELS = {
+  none: "no translation", deepl: "DeepL", google: "Google",
+  local: "offline model",
+};
+
+/**
+ * Fill the tab from the file's saved settings, with every control offering the
+ * inherited value by name — "as in All files (music)" says what will happen if
+ * you leave it alone, which a blank option does not.
+ */
+function renderFileSettings() {
+  const file = openFile();
+  if (!file) return closeFileSettings();
+  const own = file.overrides || {};
+  const inherit = (label) => `as in All files (${label})`;
+
+  $("#file-settings-name").textContent = file.name;
+  $("#tab-file-name").textContent = file.name;
+  $("#tab-file").title = file.path;
+  $("#tab-file").classList.remove("hidden");
+
+  const names = ownNames(own);
+  const count = $("#tab-file-count");
+  count.textContent = Object.keys(own).length || "";
+  count.classList.toggle("hidden", !names);
+
+  fillSelect($("#f-profile"), [
+    ["", inherit($("#opt-profile").value)],
+    ...(state.meta?.profiles || []).map((p) => [p, p]),
+  ], own.profile || "");
+
+  // "auto" is storable, so a file can be detected even when All files pins a
+  // language. An empty value cannot be stored, so it has to mean "inherit".
+  fillSelect($("#f-language"), [
+    ["", inherit(langName($("#opt-language").value))],
+    ["auto", "Detect automatically"],
+    ...LANGUAGES.filter(([code]) => code),
+  ], own.language || "");
+
+  // Assign only on a change: this re-renders while you are still typing.
+  set($("#f-hotwords"), "value", own.hotwords || "");
+  set($("#f-hotwords"), "placeholder",
+      `as in All files (${$("#opt-hotwords").value.trim() || "none"})`);
+
+  fillSelect($("#f-romanize"), [
+    ["", inherit($("#opt-romanize").checked ? "yes" : "no")],
+    ["yes", "Yes"],
+    ["no", "No"],
+  ], own.romanize === undefined ? "" : (own.romanize ? "yes" : "no"));
+
+  fillSelect($("#f-translate"), [
+    ["", inherit(TRANSLATE_LABELS[translateMode()] || translateMode())],
+    ...Object.entries(TRANSLATE_LABELS),
+  ], own.translate || "");
+
+  // Same engine-aware list as the other tab: a language the engine cannot reach
+  // is shown disabled and says why, rather than failing after you pick it.
+  const mode = own.translate || translateMode();
+  const target = $("#f-translate-target");
+  // Filled even while hidden: an empty <select> is one race away from being
+  // shown empty when the engine changes.
+  fillTargets(target, mode, own.translate_target || $("#opt-translate-target").value || "en");
+  target.insertAdjacentHTML("afterbegin",
+    `<option value="">${escapeHtml(inherit(langName($("#opt-translate-target").value)))}</option>`);
+  target.value = own.translate_target || "";
+
+  $("#f-translate-opts").style.display = mode === "none" ? "none" : "";
+  $("#f-profile-hint").textContent = PROFILE_HINTS[own.profile || $("#opt-profile").value] || "";
+  $("#f-translate-hint").textContent = own.translate === "none"
+    ? "This file is left in its own language, whatever All files says."
+    : "";
+  $("#btn-file-clear").classList.toggle("hidden", !names);
+  $("#file-settings-status").textContent = names ? `its own: ${names}` : "nothing set here yet";
+  $("#file-settings-path").textContent = state.scan?.config_file || "sgen.folder.yaml";
+}
+
+function fillSelect(select, options, selected) {
+  select.innerHTML = options
+    .map(([value, label]) =>
+      `<option value="${value}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
+  select.value = selected;
+}
+
+/** Everything the tab has set, as the folder config stores it. */
+function fileSettingValues() {
   const values = {};
-  const profile = pick("profile")?.value;
-  const translate = pick("translate")?.value;
-  const romanize = pick("romanize")?.checked;
-  if (profile) values.profile = profile;
-  if (translate) values.translate = translate;
-  if (romanize) values.romanize = true;
+  const text = (id) => $(id).value.trim();
+  if (text("#f-profile")) values.profile = text("#f-profile");
+  if (text("#f-language")) values.language = text("#f-language");
+  if (text("#f-hotwords")) values.hotwords = text("#f-hotwords");
+  if (text("#f-romanize")) values.romanize = text("#f-romanize") === "yes";
+  if (text("#f-translate")) values.translate = text("#f-translate");
+  if (text("#f-translate-target")) values.translate_target = text("#f-translate-target");
   return values;
 }
 
-$("#scan-detail").addEventListener("change", (event) => {
-  const control = event.target.closest("[data-override]");
-  if (!control) return;
-  const path = control.dataset.path;
-  setOverride(decodeURIComponent(path), rowOverrides(path));
+let hotwordsTimer = null;
+
+$("#settings-file").addEventListener("change", (event) => {
+  if (event.target.closest("[data-file-setting]")) saveFileSettings();
 });
 
-$("#scan-detail").addEventListener("click", (event) => {
-  const clear = event.target.closest("[data-clear-override]");
-  if (!clear) return;
-  setOverride(decodeURIComponent(clear.dataset.clearOverride), {});
+// Typing is saved on a pause rather than per keystroke: one write per name, not
+// one per letter.
+$("#f-hotwords").addEventListener("input", () => {
+  clearTimeout(hotwordsTimer);
+  hotwordsTimer = setTimeout(saveFileSettings, 600);
+});
+
+async function saveFileSettings() {
+  const path = state.fileSettings;
+  if (!path) return;
+  $("#file-settings-status").textContent = "saving…";
+  if (await setOverride(path, fileSettingValues())) renderFileSettings();
+}
+
+$("#btn-file-clear").addEventListener("click", async () => {
+  const path = state.fileSettings;
+  if (!path) return;
+  if (await setOverride(path, {})) {
+    renderFileSettings();
+    toast("Back on the All files settings.", "ok");
+  }
 });
 
 /**
@@ -822,8 +957,8 @@ $("#scan-detail").addEventListener("click", (event) => {
  *
  * Two clicks, because it throws away choices that took effort to make. The
  * button states the count both times, so "reset 12" is never mistaken for
- * "reset the one I am looking at" — and the per-row "Use the panel settings"
- * is still there when only one file went wrong.
+ * "reset the one I am looking at" — and the tab's own "Use the All files
+ * settings" is still there when only one file went wrong.
  */
 $("#scan-detail").addEventListener("click", async (event) => {
   const btn = event.target.closest("#btn-reset-overrides");
@@ -839,7 +974,7 @@ $("#scan-detail").addEventListener("click", async (event) => {
       body: JSON.stringify({ folder: state.cwd.path }),
     });
     toast(res.cleared
-      ? `${res.cleared} file${res.cleared === 1 ? "" : "s"} back on the panel settings.`
+      ? `${res.cleared} file${res.cleared === 1 ? "" : "s"} back on the All files settings.`
       : "Nothing to reset.", "ok");
     await scanFolder({ quiet: true });
   } catch (err) {

@@ -71,6 +71,31 @@ that safe:
 The CLI resumes identically: `python -m sgen run "D:\videos"` skips finished
 files and says so; `--no-resume` redoes everything.
 
+**Settings for one file.** A folder is rarely uniform: two files are songs, one
+is already in English, one wants Latin-script output. Each row in the scan has a
+**Settings…** button that opens that file on a second tab of the settings panel —
+the same controls, each offering *as in All files (…)* so an override is visibly
+an exception rather than a separate set of settings. Anything left inherited
+follows the first tab.
+
+They are saved in `sgen.folder.yaml` **beside the videos**, for the same reason
+resumability reads the subtitle files: state in the app cannot survive a restart,
+and a database can disagree with the disk. It is meant to be hand-editable — for
+fifty files that beats fifty clicks:
+
+```yaml
+files:
+  "Full Song - KHAIRIYAT.mp4":
+    profile: music
+    romanize: true
+  "beach 2019.mp4":
+    translate: none        # already English
+  "interview.mp4":
+    language: auto         # detect this one, even though All files pins German
+```
+
+`Reset N files to All files` in the scan's action row deletes the lot.
+
 **Translate** — every transcript you have, each with a Translate button:
 Google or DeepL if you have a key, or the paste-it-yourself round trip if you
 don't. Works from the stored transcript, so no GPU and no second pass.

@@ -114,11 +114,29 @@ def test_nothing_overridden_leaves_the_options_alone():
     assert folderconf.apply_to_options(base, {}) == base
 
 
+def test_one_file_can_turn_romanize_off_while_it_is_on_everywhere_else():
+    """A stored `false` has to survive: the folder is Hindi, this one file is not."""
+    out = folderconf.apply_to_options({"romanize": True}, {"romanize": False})
+    assert out["romanize"] is False
+
+
 def test_profile_and_romanize_are_applied():
     out = folderconf.apply_to_options(
         {"profile": "home-video", "romanize": False},
         {"profile": "music", "romanize": True})
     assert out["profile"] == "music" and out["romanize"] is True
+
+
+def test_a_file_can_ask_for_detection_when_the_app_pins_a_language():
+    """"" means "no override", so it cannot also mean "detect". `auto` is how one
+    file opts out of a pinned language."""
+    out = folderconf.apply_to_options({"language": "de"}, {"language": "auto"})
+    assert out["language"] == ""
+
+
+def test_an_ordinary_language_code_is_passed_through():
+    out = folderconf.apply_to_options({"language": "de"}, {"language": "hi"})
+    assert out["language"] == "hi"
 
 
 def test_translate_none_turns_both_paths_off():
@@ -147,6 +165,13 @@ def test_an_empty_translate_defers_to_the_panel():
 # --------------------------------------------------------------------------- #
 # writing
 # --------------------------------------------------------------------------- #
+
+def test_romanize_off_is_stored_rather_than_read_as_no_override(folder):
+    """`False` is a value, not an absence — the one case where "empty means
+    inherit" would silently drop what the user chose."""
+    folderconf.set_for_file(folder, folder / "song.mp4", {"romanize": False})
+    assert folderconf.for_file(folder, folder / "song.mp4") == {"romanize": False}
+
 
 def test_setting_an_override_creates_a_readable_file(folder):
     folderconf.set_for_file(folder, folder / "song.mp4",
