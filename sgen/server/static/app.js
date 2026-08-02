@@ -88,13 +88,33 @@ async function api(path, options = {}) {
 }
 
 let toastTimer = null;
+
+/**
+ * How long a message stays up.
+ *
+ * A fixed four seconds was too short for the ones worth reading — "let go of the
+ * 3 files you had picked" is a sentence, not a tick. Long enough to read at a
+ * calm pace, with a floor for errors, which arrive when you are already busy
+ * being surprised.
+ */
+function toastMs(message, kind) {
+  const reading = 1500 + message.length * 65;   // ~14 characters a second
+  return Math.min(Math.max(reading, kind === "error" ? 8000 : 5000), 15000);
+}
+
 function toast(message, kind = "") {
   const el = $("#toast");
   el.textContent = message;
   el.className = `toast show ${kind}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = "toast"; }, 4000);
+  toastTimer = setTimeout(() => { el.className = "toast"; }, toastMs(message, kind));
 }
+
+// Once it can sit there for ten seconds, it needs a way out from under.
+$("#toast").addEventListener("click", () => {
+  clearTimeout(toastTimer);
+  $("#toast").className = "toast";
+});
 
 function escapeHtml(text) {
   const div = document.createElement("div");

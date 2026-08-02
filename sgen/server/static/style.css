@@ -466,7 +466,13 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
   z-index: 50;
   max-width: 80vw;
 }
-.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+/* Clickable only while shown, so it never swallows a click at rest. */
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
 .toast.error { border-color: var(--danger); color: #ffd7d5; }
 .toast.ok { border-color: var(--ok); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
