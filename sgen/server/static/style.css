@@ -339,21 +339,31 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
   border-top: 1px solid var(--border);
 }
 
+/* Its own surface, like the file browser above it: without one, a scrollable
+   list of rows sat directly on the panel and did not read as a region at all. */
 .scan-list {
   list-style: none;
   margin: 8px 0 0;
   padding: 0;
-  max-height: 220px;
+  max-height: 260px;
   overflow-y: auto;
   font-size: 11px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
 }
 .scan-list li {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 2px 10px;
-  padding: 5px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, .04);
 }
+.scan-list li:last-child { border-bottom: none; }
+/* Alternating tint, because a filename that wraps to two lines otherwise looks
+   like two files. */
+.scan-list li:nth-child(even) { background: rgba(255, 255, 255, .035); }
+.scan-list li:hover { background: rgba(91, 157, 255, .06); }
 .scan-actions { display: flex; gap: 6px; margin-top: 8px; }
 .scan-pick { align-items: flex-start; gap: 7px; margin: 0; }
 .scan-pick input { margin-top: 2px; flex: none; }
@@ -361,7 +371,7 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
 .scan-done .scan-name { color: var(--text-faint); }
 .scan-name { font-family: var(--mono); word-break: break-all; }
 .scan-state { color: var(--text-faint); white-space: nowrap; }
-.scan-why { grid-column: 1 / -1; color: var(--text-faint); }
+.scan-why { grid-column: 1; align-self: center; color: var(--text-faint); }
 /* ------------------------------------------- settings: all files / this file */
 
 .settings-tabs {
@@ -403,16 +413,16 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
 .file-actions { margin-top: 14px; align-items: center; }
 #settings-file .field select, #settings-file .field input { width: 100%; }
 
+/* Beside the reason rather than under it: three lines a row meant two and a half
+   files visible in the box. */
 .scan-own-line {
-  grid-column: 1 / -1;
+  grid-column: 2;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 3px;
 }
-.scan-own-note { color: var(--accent-dim); font-size: 10px; }
-/* The row whose settings are open on the panel's second tab. */
-.scan-open { background: var(--bg); }
+.scan-own-note { color: var(--accent); font-size: 10px; opacity: .85; }
 .scan-own-row {
   display: flex;
   flex-wrap: wrap;
@@ -426,7 +436,11 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
 .scan-own-row label { font-size: 10px; color: var(--text-faint); }
 .scan-own-row select { width: auto; padding: 3px 6px; font-size: 11px; }
 /* A file with its own settings should be findable at a glance. */
-.scan-custom { border-left: 2px solid var(--accent-dim); padding-left: 7px; }
+/* Keeps the text aligned with the rows above and below: 8 + the 2px marker. */
+.scan-list li.scan-custom { border-left: 2px solid var(--accent-dim); padding-left: 8px; }
+/* Last, so it wins over the stripe and the hover: this is the row you are
+   editing on the settings panel's second tab. */
+.scan-list li.scan-open { background: rgba(91, 157, 255, .13); }
 .scan-problem { color: var(--warn); }
 .scan-damaged .scan-state { color: var(--danger); }
 .scan-translate .scan-state { color: var(--accent); }
