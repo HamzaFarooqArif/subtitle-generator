@@ -148,6 +148,52 @@ def test_scan_reports_what_a_folder_still_needs(client, tmp_path):
     assert "already done" in data["summary"]
 
 
+def test_per_file_settings_round_trip_through_the_api(client, tmp_path):
+    """A folder of songs and home video needs different profiles per file."""
+    (tmp_path / "song.mp4").write_bytes(b"x")
+    (tmp_path / "beach.mp4").write_bytes(b"x")
+
+    res = client.post("/api/folder-config", json={
+        "folder": str(tmp_path), "path": str(tmp_path / "song.mp4"),
+        "values": {"profile": "music", "romanize": True}})
+    assert res.status_code == 200
+    assert (tmp_path / "sgen.folder.yaml").exists()
+
+    scan = client.post("/api/scan", json={
+        "folder": str(tmp_path), "options": {"formats": ["srt"]}}).json()
+    by_name = {f["name"]: f for f in scan["files"]}
+    assert by_name["song.mp4"]["overrides"] == {"profile": "music", "romanize": True}
+    assert by_name["beach.mp4"]["overrides"] == {}
+    assert scan["config_file"].endswith("sgen.folder.yaml")
+
+
+def test_a_per_file_setting_reaches_the_queued_job(client, tmp_path):
+    (tmp_path / "song.mp4").write_bytes(b"x")
+    client.post("/api/folder-config", json={
+        "folder": str(tmp_path), "path": str(tmp_path / "song.mp4"),
+        "values": {"profile": "music", "translate": "none"}})
+
+    res = client.post("/api/jobs", json={
+        "paths": [str(tmp_path)],
+        "options": {"formats": ["srt"], "profile": "home-video",
+                    "cloud_provider": "deepl"},
+        "skip_done": True,
+    })
+    job = res.json()["jobs"][0]
+    assert job["options"]["profile"] == "music", "the file's own profile is used"
+    assert job["options"]["cloud_provider"] == "", "and its opt-out of translation"
+    client.delete(f"/api/jobs/{job['id']}")
+
+
+def test_an_unknown_per_file_setting_is_refused(client, tmp_path):
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    res = client.post("/api/folder-config", json={
+        "folder": str(tmp_path), "path": str(tmp_path / "a.mp4"),
+        "values": {"model": "large-v3"}})
+    assert res.status_code == 400
+    assert not (tmp_path / "sgen.folder.yaml").exists()
+
+
 def test_scan_rejects_a_path_that_is_not_a_folder(client, tmp_path):
     lonely = tmp_path / "clip.mp4"
     lonely.write_bytes(b"x")

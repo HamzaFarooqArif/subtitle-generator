@@ -106,6 +106,14 @@ class ScanRequest(BaseModel):
     recursive: bool = True
 
 
+class FolderConfigRequest(BaseModel):
+    """One file's per-file settings, written to the folder's own config file."""
+
+    folder: str
+    path: str
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
 class RegateRequest(BaseModel):
     gating: dict[str, Any] = Field(default_factory=dict)
     cues: dict[str, Any] = Field(default_factory=dict)
@@ -276,6 +284,24 @@ def create_app() -> FastAPI:
     def list_jobs() -> dict[str, Any]:
         return {"jobs": queue.list()}
 
+    def _settings_for(folder: Path, base: dict[str, Any]):
+        """Build a per-file (config, translate target, overrides) resolver.
+
+        Each file is judged and run with its own settings, so one folder can hold
+        songs, Hindi footage and English clips without three separate runs.
+        """
+        from .. import folderconf
+
+        overrides = folderconf.load(folder)
+
+        def resolve(source: Path):
+            key = folderconf.key_for(folder, source)
+            mine = overrides.get(key) or overrides.get(source.name) or {}
+            options = folderconf.apply_to_options(base, mine)
+            return build_config(options), _translate_target_for(options), mine
+
+        return resolve, overrides
+
     def _translate_target_for(options: dict[str, Any]) -> str | None:
         """The language a translation was asked for, or None.
 
@@ -292,7 +318,10 @@ def create_app() -> FastAPI:
         """What a folder still needs, judged from the files in it."""
         from .. import resume
 
+        from .. import folderconf
+
         folder = Path(req.folder)
+        resolve, _ = _settings_for(folder, req.options)
         try:
             result = resume.scan_folder(
                 folder,
@@ -300,37 +329,78 @@ def create_app() -> FastAPI:
                 out_dir=_out_dir(req.out_dir),
                 translate_target=_translate_target_for(req.options),
                 recursive=req.recursive,
+                settings_for=resolve,
             )
         except NotADirectoryError as exc:
             raise HTTPException(400, f"not a folder: {exc}") from exc
         payload = result.to_dict()
         payload["summary"] = resume.summarise(result)
+        payload["config_file"] = str(folderconf.config_path(folder))
         return payload
+
+    @app.post("/api/folder-config")
+    def set_folder_config(req: FolderConfigRequest) -> dict[str, Any]:
+        """Set one file's per-file settings, in the folder's own config file."""
+        from .. import folderconf
+
+        folder = Path(req.folder)
+        if not folder.is_dir():
+            raise HTTPException(400, f"not a folder: {folder}")
+        source = Path(req.path)
+        try:
+            overrides = folderconf.set_for_file(folder, source, req.values)
+        except folderconf.FolderConfigError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(400, f"could not write the folder settings: {exc}") from exc
+        return {
+            "ok": True,
+            "path": str(folderconf.config_path(folder)),
+            "overrides": overrides,
+        }
 
     @app.post("/api/jobs")
     def submit(req: SubmitRequest) -> dict[str, Any]:
         from .. import resume
 
+        from .. import folderconf
+
         out_dir = _out_dir(req.out_dir)
-        expanded = resume.iter_media([Path(p) for p in req.paths], req.recursive)
+        requested = [Path(p) for p in req.paths]
+        expanded = resume.iter_media(requested, req.recursive)
         if not expanded:
             raise HTTPException(400, "no media files found in selection")
 
+        # Per-file settings come from the folder each file lives in, so they
+        # apply whether the folder or the file was picked.
+        def options_for(source: Path) -> dict[str, Any]:
+            override = folderconf.for_file(source.parent, source)
+            if not override:
+                for base in requested:
+                    if base.is_dir():
+                        found = folderconf.for_file(base, source)
+                        if found:
+                            override = found
+                            break
+            return folderconf.apply_to_options(req.options, override)
+
         skipped: list[dict[str, Any]] = []
         if req.skip_done and not req.options.get("overwrite"):
-            cfg = build_config(req.options)
-            target = _translate_target_for(req.options)
             keep: list[Path] = []
             for source in expanded:
+                options = options_for(source)
                 status = resume.classify(
-                    source, cfg, out_dir=out_dir, translate_target=target
+                    source, build_config(options), out_dir=out_dir,
+                    translate_target=_translate_target_for(options),
                 )
                 (keep if status.needs_work else skipped).append(
                     source if status.needs_work else status.to_dict()
                 )
             expanded = keep
 
-        created = [queue.submit(p, out_dir, req.options).to_dict() for p in expanded]
+        created = [
+            queue.submit(p, out_dir, options_for(p)).to_dict() for p in expanded
+        ]
         return {"jobs": created, "skipped": skipped, "skipped_count": len(skipped)}
 
     @app.delete("/api/jobs/{job_id}")

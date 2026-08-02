@@ -53,6 +53,8 @@ class FileStatus:
     languages: list[str] = field(default_factory=list)
     outputs: list[Path] = field(default_factory=list)
     damaged: list[Path] = field(default_factory=list)
+    # Per-file settings from sgen.folder.yaml, if this file has any.
+    overrides: dict = field(default_factory=dict)
     # Whether the stored transcript is still around, which decides whether a
     # missing translation costs a GPU pass or only an API call.
     has_transcript: bool = False
@@ -71,6 +73,7 @@ class FileStatus:
             "outputs": [str(p) for p in self.outputs],
             "damaged": [str(p) for p in self.damaged],
             "has_transcript": self.has_transcript,
+            "overrides": self.overrides,
         }
 
 
@@ -78,6 +81,9 @@ class FileStatus:
 class Scan:
     folder: Path
     files: list[FileStatus]
+    # Complaints about sgen.folder.yaml, so a typo in it is visible rather than
+    # silently ignored.
+    config_problems: list[str] = field(default_factory=list)
 
     @property
     def counts(self) -> dict[str, int]:
@@ -96,6 +102,7 @@ class Scan:
             "total": len(self.files),
             "counts": self.counts,
             "files": [f.to_dict() for f in self.files],
+            "config_problems": self.config_problems,
         }
 
 
@@ -277,14 +284,29 @@ def scan_folder(
     translate_target: str | None = None,
     recursive: bool = True,
     work_dir: Path | None = None,
+    settings_for=None,
 ) -> Scan:
-    """Classify every media file in a folder."""
-    files = [
-        classify(source, cfg, out_dir=out_dir, translate_target=translate_target,
-                 work_dir=work_dir)
-        for source in media_files(folder, recursive)
-    ]
-    return Scan(folder=folder, files=files)
+    """Classify every media file in a folder.
+
+    `settings_for(source) -> (Config, translate_target, overrides)` lets each file
+    be judged by its own settings, which is what per-file overrides require: a
+    song with translation turned off is finished with only its own subtitles,
+    while the file next to it is not.
+    """
+    from . import folderconf
+
+    files = []
+    for source in media_files(folder, recursive):
+        if settings_for is None:
+            file_cfg, target, overrides = cfg, translate_target, {}
+        else:
+            file_cfg, target, overrides = settings_for(source)
+        status = classify(source, file_cfg, out_dir=out_dir,
+                          translate_target=target, work_dir=work_dir)
+        status.overrides = overrides
+        files.append(status)
+    return Scan(folder=folder, files=files,
+                config_problems=folderconf.problems(folder))
 
 
 def summarise(scan: Scan) -> str:

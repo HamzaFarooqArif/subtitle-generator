@@ -360,6 +360,23 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
 .scan-name { font-family: var(--mono); word-break: break-all; }
 .scan-state { color: var(--text-faint); white-space: nowrap; }
 .scan-why { grid-column: 1 / -1; color: var(--text-faint); }
+.scan-own { grid-column: 1 / -1; margin-top: 4px; }
+.scan-own summary { cursor: pointer; color: var(--text-faint); font-size: 10px; }
+.scan-own-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin: 6px 0 2px;
+  padding: 7px 9px;
+  background: var(--bg);
+  border-radius: 4px;
+}
+.scan-own-row label { font-size: 10px; color: var(--text-faint); }
+.scan-own-row select { width: auto; padding: 3px 6px; font-size: 11px; }
+/* A file with its own settings should be findable at a glance. */
+.scan-custom { border-left: 2px solid var(--accent-dim); padding-left: 7px; }
+.scan-problem { color: var(--warn); }
 .scan-damaged .scan-state { color: var(--danger); }
 .scan-translate .scan-state { color: var(--accent); }
 

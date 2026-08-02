@@ -566,24 +566,117 @@ function renderScanList(scan) {
   const rows = scan.files.map((f) => {
     const checked = f.state !== "done" && !state.excluded.has(f.path);
     const forced = f.state === "done" && state.included.has(f.path);
-    return `<li class="scan-${f.state}">
+    const path = encodeURIComponent(f.path);
+    const own = f.overrides || {};
+    const custom = Object.keys(own).length;
+    return `<li class="scan-${f.state}${custom ? " scan-custom" : ""}">
       <label class="check scan-pick">
-        <input type="checkbox" data-scan-path="${encodeURIComponent(f.path)}"
+        <input type="checkbox" data-scan-path="${path}"
           ${checked || forced ? "checked" : ""}>
         <span class="scan-name">${escapeHtml(f.name)}</span>
       </label>
       <span class="scan-state">${STATE_LABELS[f.state] || f.state}</span>
       <span class="scan-why">${escapeHtml(f.reason)}</span>
+      <details class="scan-own"${custom ? " open" : ""}>
+        <summary>${custom ? `settings for this file (${custom})` : "settings for this file"}</summary>
+        <div class="scan-own-row">
+          <label>Profile
+            <select data-override="profile" data-path="${path}">
+              ${profileOptions(own.profile)}
+            </select>
+          </label>
+          <label>Translate
+            <select data-override="translate" data-path="${path}">
+              ${TRANSLATE_CHOICES.map(([v, label]) =>
+                `<option value="${v}"${(own.translate || "") === v ? " selected" : ""}>${label}</option>`).join("")}
+            </select>
+          </label>
+          <label class="check">
+            <input type="checkbox" data-override="romanize" data-path="${path}"
+              ${own.romanize ? "checked" : ""}>
+            Latin script
+          </label>
+          ${custom ? `<button class="btn ghost tiny" data-clear-override="${path}">Use the panel settings</button>` : ""}
+        </div>
+      </details>
     </li>`;
   });
+  const problems = (scan.config_problems || []).length
+    ? `<p class="hint scan-problem">${scan.config_problems
+        .map((p) => escapeHtml(p)).join("<br>")}</p>`
+    : "";
   $("#scan-detail").innerHTML = `
     <div class="scan-actions">
       <button class="btn ghost tiny" id="btn-scan-all">Tick all</button>
       <button class="btn ghost tiny" id="btn-scan-none">Untick all</button>
       <button class="btn ghost tiny" id="btn-scan-todo">Only the unfinished</button>
     </div>
-    <ul class="scan-list">${rows.join("")}</ul>`;
+    ${problems}
+    <ul class="scan-list">${rows.join("")}</ul>
+    <p class="hint">
+      Per-file choices are saved in <code>${escapeHtml(scan.config_file || "sgen.folder.yaml")}</code>,
+      beside the videos — so they survive restarts, move with the folder, and can
+      be edited by hand for a large batch.
+    </p>`;
 }
+
+// "" means "whatever the settings panel says", which is the common case.
+const TRANSLATE_CHOICES = [
+  ["", "as in settings"],
+  ["none", "no translation"],
+  ["deepl", "DeepL"],
+  ["google", "Google"],
+  ["local", "offline model"],
+];
+
+function profileOptions(selected) {
+  const profiles = state.meta?.profiles || [];
+  return [`<option value=""${!selected ? " selected" : ""}>as in settings</option>`]
+    .concat(profiles.map((p) =>
+      `<option value="${p}"${p === selected ? " selected" : ""}>${p}</option>`))
+    .join("");
+}
+
+/** Write one file's override to the folder's config file, then re-scan. */
+async function setOverride(path, values) {
+  try {
+    await api("/api/folder-config", {
+      method: "POST",
+      body: JSON.stringify({ folder: state.cwd.path, path, values }),
+    });
+    // Re-scan: a per-file change can flip whether that file counts as finished.
+    await scanFolder();
+  } catch (err) {
+    toast(`Could not save that file's settings: ${err.message}`, "error");
+  }
+}
+
+/** Collect all three controls for a row, so one file's settings stay consistent. */
+function rowOverrides(path) {
+  const pick = (name) =>
+    document.querySelector(`[data-override="${name}"][data-path="${path}"]`);
+  const values = {};
+  const profile = pick("profile")?.value;
+  const translate = pick("translate")?.value;
+  const romanize = pick("romanize")?.checked;
+  if (profile) values.profile = profile;
+  if (translate) values.translate = translate;
+  if (romanize) values.romanize = true;
+  return values;
+}
+
+$("#scan-detail").addEventListener("change", (event) => {
+  const control = event.target.closest("[data-override]");
+  if (!control) return;
+  const path = control.dataset.path;
+  setOverride(decodeURIComponent(path), rowOverrides(path));
+});
+
+$("#scan-detail").addEventListener("click", (event) => {
+  const clear = event.target.closest("[data-clear-override]");
+  if (!clear) return;
+  setOverride(decodeURIComponent(clear.dataset.clearOverride), {});
+});
 
 /** Paths the user has ticked — what a folder submit will actually queue. */
 function scanChecked() {
