@@ -49,9 +49,10 @@ stays loaded between jobs), with live per-stage progress streamed over SSE.
 Finished files, and everything transcribed in earlier sessions, are listed
 underneath with a **Translate…** button.
 
-**Folder mode** sits under the file browser: **Check this folder** reports what
-it still needs, **Transcribe folder** queues only that. Interrupt it however you
-like — close the app, restart the machine — and run it again; it continues.
+**Folder mode** sits under the file browser: **Find files in this folder** lists
+every video underneath it and what each one still needs; **Transcribe folder**
+queues only that. Interrupt it however you like — close the app, restart the
+machine — and run it again; it continues.
 
 Clicking files and ticking a scan are the two ways to choose what runs, and only
 one can be active: starting either lets go of the other, and says so. Both at

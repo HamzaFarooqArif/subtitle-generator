@@ -793,8 +793,9 @@ function dropScan(inFavourOf) {
   closeFileSettings();
   $("#scan-detail").innerHTML = "";
   $("#scan-summary").textContent =
-    `Checked ${had} file${had === 1 ? "" : "s"} — set aside in favour of `
-    + `${inFavourOf}. Press Check this folder again to go back to the whole folder.`;
+    `Found ${had} file${had === 1 ? "" : "s"} — set aside in favour of `
+    + `${inFavourOf}. Press “Find files in this folder” again to go back to `
+    + "the whole folder.";
   return true;
 }
 
@@ -804,7 +805,7 @@ $("#btn-up").addEventListener("click", () => {
 $("#drive-select").addEventListener("change", (e) => browse(e.target.value));
 // There was a "Select all media" button here. Folder mode replaced it: it took
 // this folder only, ignored what was already done, and had no way to reach a
-// file's own settings. "Check this folder" then "Tick all" is the same
+// file's own settings. "Find files in this folder" then "Tick all" is the same
 // instruction, said better — and two buttons that look alike are worse than one.
 $("#btn-clear-selection").addEventListener("click", () => {
   state.selection.clear();
