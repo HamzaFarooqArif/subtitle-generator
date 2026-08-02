@@ -200,6 +200,18 @@ def save(folder: Path, overrides: dict[str, dict[str, Any]]) -> Path:
     return path
 
 
+def clear_all(folder: Path) -> tuple[Path, int]:
+    """Remove every per-file override in this folder.
+
+    Returns the path and how many files had settings, so the caller can say what
+    it undid rather than reporting a silent success.
+    """
+    count = len(load(folder))
+    path = config_path(folder)
+    path.unlink(missing_ok=True)
+    return path, count
+
+
 def set_for_file(
     folder: Path, source: Path, values: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:

@@ -338,6 +338,20 @@ def create_app() -> FastAPI:
         payload["config_file"] = str(folderconf.config_path(folder))
         return payload
 
+    @app.post("/api/folder-config/reset")
+    def reset_folder_config(req: ScanRequest) -> dict[str, Any]:
+        """Put every file in this folder back on the panel's settings."""
+        from .. import folderconf
+
+        folder = Path(req.folder)
+        if not folder.is_dir():
+            raise HTTPException(400, f"not a folder: {folder}")
+        try:
+            path, cleared = folderconf.clear_all(folder)
+        except OSError as exc:
+            raise HTTPException(400, f"could not remove {path}: {exc}") from exc
+        return {"ok": True, "cleared": cleared, "path": str(path)}
+
     @app.post("/api/folder-config")
     def set_folder_config(req: FolderConfigRequest) -> dict[str, Any]:
         """Set one file's per-file settings, in the folder's own config file."""

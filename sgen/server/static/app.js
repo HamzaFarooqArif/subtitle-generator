@@ -605,11 +605,19 @@ function renderScanList(scan) {
     ? `<p class="hint scan-problem">${scan.config_problems
         .map((p) => escapeHtml(p)).join("<br>")}</p>`
     : "";
+  // Only offered when there is something to undo, so the button is never a
+  // decoy — and it names the count, because it discards work you did.
+  const customCount = scan.files.filter((f) => Object.keys(f.overrides || {}).length).length;
+  const resetButton = customCount
+    ? `<button class="btn ghost tiny" id="btn-reset-overrides">
+         Reset per-file settings (${customCount})</button>`
+    : "";
   $("#scan-detail").innerHTML = `
     <div class="scan-actions">
       <button class="btn ghost tiny" id="btn-scan-all">Tick all</button>
       <button class="btn ghost tiny" id="btn-scan-none">Untick all</button>
       <button class="btn ghost tiny" id="btn-scan-todo">Only the unfinished</button>
+      ${resetButton}
     </div>
     ${problems}
     <ul class="scan-list">${rows.join("")}</ul>
@@ -676,6 +684,50 @@ $("#scan-detail").addEventListener("click", (event) => {
   const clear = event.target.closest("[data-clear-override]");
   if (!clear) return;
   setOverride(decodeURIComponent(clear.dataset.clearOverride), {});
+});
+
+/**
+ * Reset every file in the folder to the panel's settings.
+ *
+ * Two clicks, because it throws away choices that took effort to make. The
+ * button states the count both times, so "reset 12" is never mistaken for
+ * "reset the one I am looking at" — and the per-row "Use the panel settings"
+ * is still there when only one file went wrong.
+ */
+$("#scan-detail").addEventListener("click", async (event) => {
+  const btn = event.target.closest("#btn-reset-overrides");
+  if (!btn) return;
+
+  if (btn.dataset.confirming !== "yes") {
+    btn.dataset.confirming = "yes";
+    const original = btn.textContent;
+    btn.textContent = `Really reset all ${btn.textContent.match(/\d+/)?.[0] || ""}?`;
+    btn.classList.add("danger");
+    // Reverts on its own: a destructive button left armed is a trap.
+    setTimeout(() => {
+      if (btn.dataset.confirming === "yes") {
+        btn.dataset.confirming = "";
+        btn.textContent = original;
+        btn.classList.remove("danger");
+      }
+    }, 4000);
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    const res = await api("/api/folder-config/reset", {
+      method: "POST",
+      body: JSON.stringify({ folder: state.cwd.path }),
+    });
+    toast(res.cleared
+      ? `${res.cleared} file${res.cleared === 1 ? "" : "s"} back on the panel settings.`
+      : "Nothing to reset.", "ok");
+    await scanFolder();
+  } catch (err) {
+    toast(`Could not reset: ${err.message}`, "error");
+    btn.disabled = false;
+  }
 });
 
 /** Paths the user has ticked — what a folder submit will actually queue. */

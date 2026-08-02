@@ -127,6 +127,8 @@ textarea { resize: vertical; font-family: var(--mono); font-size: 13px; }
 .btn.primary:hover:not(:disabled) { background: #355c96; }
 .btn.ghost { background: none; }
 .btn.tiny { padding: 3px 8px; font-size: 11px; }
+/* Armed destructive action: unmistakable while it waits for the second click. */
+.btn.danger { border-color: var(--danger); color: #ffd7d5; }
 .btn.big { width: 100%; padding: 11px; font-size: 14px; margin-top: 4px; }
 /* ----------------------------------------------------------------- browser */
 

@@ -185,6 +185,39 @@ def test_a_per_file_setting_reaches_the_queued_job(client, tmp_path):
     client.delete(f"/api/jobs/{job['id']}")
 
 
+def test_resetting_puts_every_file_back_on_the_panel_settings(client, tmp_path):
+    for name in ("song.mp4", "beach.mp4", "clip.mp4"):
+        (tmp_path / name).write_bytes(b"x")
+    client.post("/api/folder-config", json={
+        "folder": str(tmp_path), "path": str(tmp_path / "song.mp4"),
+        "values": {"profile": "music"}})
+    client.post("/api/folder-config", json={
+        "folder": str(tmp_path), "path": str(tmp_path / "beach.mp4"),
+        "values": {"translate": "none"}})
+    assert (tmp_path / "sgen.folder.yaml").exists()
+
+    res = client.post("/api/folder-config/reset", json={"folder": str(tmp_path)})
+    assert res.status_code == 200
+    assert res.json()["cleared"] == 2
+    assert not (tmp_path / "sgen.folder.yaml").exists()
+
+    scan = client.post("/api/scan", json={
+        "folder": str(tmp_path), "options": {"formats": ["srt"]}}).json()
+    assert all(f["overrides"] == {} for f in scan["files"])
+
+
+def test_resetting_a_folder_that_has_no_overrides_is_not_an_error(client, tmp_path):
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    res = client.post("/api/folder-config/reset", json={"folder": str(tmp_path)})
+    assert res.status_code == 200 and res.json()["cleared"] == 0
+
+
+def test_resetting_needs_a_real_folder(client, tmp_path):
+    res = client.post("/api/folder-config/reset",
+                      json={"folder": str(tmp_path / "nope")})
+    assert res.status_code == 400
+
+
 def test_an_unknown_per_file_setting_is_refused(client, tmp_path):
     (tmp_path / "a.mp4").write_bytes(b"x")
     res = client.post("/api/folder-config", json={

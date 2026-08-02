@@ -194,6 +194,23 @@ def test_an_invalid_setting_is_refused_before_writing(folder):
     assert not folderconf.config_path(folder).exists()
 
 
+def test_clearing_everything_reports_what_it_undid(folder):
+    """For when the per-file settings have got into a mess: one action to put the
+    whole folder back on the panel's settings."""
+    folderconf.set_for_file(folder, folder / "song.mp4", {"profile": "music"})
+    folderconf.set_for_file(folder, folder / "beach.mp4", {"translate": "none"})
+
+    path, cleared = folderconf.clear_all(folder)
+    assert cleared == 2, "says how many files it reset, rather than succeeding silently"
+    assert not path.exists()
+    assert folderconf.load(folder) == {}
+
+
+def test_clearing_a_folder_with_no_overrides_is_harmless(folder):
+    path, cleared = folderconf.clear_all(folder)
+    assert cleared == 0 and not path.exists()
+
+
 def test_a_round_trip_survives_reloading(folder):
     """The point of keeping this on disk: a new process reads the same thing."""
     folderconf.set_for_file(folder, folder / "trip" / "song.mp4",
