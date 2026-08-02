@@ -137,8 +137,13 @@ def run(
     ),
     romanize: Optional[bool] = typer.Option(
         None, "--romanize/--no-romanize",
-        help="Also write Latin-script subtitles for non-Latin languages "
+        help="Also write the subtitles in a second script "
              "(नमस्ते -> namaste), as <name>.<lang>-Latn.srt.",
+    ),
+    romanize_script: Optional[str] = typer.Option(
+        None, "--script",
+        help="Which second script: latin (Indic and Cyrillic), urdu (Hindi "
+             "only, written <lang>-Arab.srt), or both.",
     ),
     translate: bool = typer.Option(
         False, "--translate",
@@ -185,6 +190,11 @@ def run(
         cfg.gating.drop_suppressed = not keep_suppressed
     if romanize is not None:
         cfg.romanize = romanize
+    if romanize_script:
+        if romanize_script not in ("latin", "urdu", "both"):
+            raise typer.BadParameter("--script must be latin, urdu or both")
+        cfg.romanize_script = romanize_script
+        cfg.romanize = True if romanize is None else romanize
     if out_dir is None and user.defaults.out_dir:
         out_dir = Path(user.defaults.out_dir)
     if translate:
@@ -315,7 +325,10 @@ def reformat(
     target_cps: Optional[float] = typer.Option(None, "--target-cps"),
     romanize: Optional[bool] = typer.Option(
         None, "--romanize/--no-romanize",
-        help="Also write Latin-script subtitles (Indic scripts and Cyrillic).",
+        help="Also write the subtitles in a second script.",
+    ),
+    script: Optional[str] = typer.Option(
+        None, "--script", help="latin | urdu | both. Implies --romanize."
     ),
 ) -> None:
     """Rebuild cues and subtitle files from a sidecar. No GPU, no re-transcribe."""
@@ -331,6 +344,11 @@ def reformat(
         cfg.cues.target_cps = target_cps
     if romanize is not None:
         cfg.romanize = romanize
+    if script:
+        if script not in ("latin", "urdu", "both"):
+            raise typer.BadParameter("--script must be latin, urdu or both")
+        cfg.romanize_script = script
+        cfg.romanize = True if romanize is None else romanize
 
     outputs = reformat_from_sidecar(sidecar, cfg)
     for out in outputs:
@@ -697,6 +715,7 @@ def config(
         ("defaults.language", d.language or "detect"),
         ("defaults.hotwords", d.hotwords or "—"),
         ("defaults.romanize", str(d.romanize).lower()),
+        ("defaults.romanize_script", d.romanize_script),
         ("defaults.keep_suppressed", str(d.keep_suppressed).lower()),
         ("defaults.formats", ", ".join(d.formats)),
         ("defaults.out_dir", d.out_dir or "next to each source file"),

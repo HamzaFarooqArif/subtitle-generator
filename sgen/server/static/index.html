@@ -128,12 +128,21 @@
       <div class="field">
         <label class="check">
           <input type="checkbox" id="opt-romanize">
-          Also write Latin-script subtitles
+          Also write the subtitles in a second script
         </label>
+        <div class="subfield" id="romanize-opts">
+          <label for="opt-romanize-script">Script</label>
+          <select id="opt-romanize-script">
+            <option value="latin" selected>Latin — namaste, Tikho</option>
+            <option value="urdu">Urdu — نمستے (Hindi only)</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
         <p class="hint">
           For languages you speak but don't read: नमस्ते becomes
           <code>namaste</code> and Тихо becomes <code>Tikho</code>, as a second
-          file. Indic scripts and Cyrillic.
+          file. Latin covers Indic scripts and Cyrillic; Urdu is Hindi in the
+          other alphabet of the same language.
         </p>
       </div>
 
@@ -261,11 +270,14 @@
         </div>
 
         <div class="field">
-          <label for="f-romanize">Latin-script subtitles</label>
+          <label for="f-romanize">Second script</label>
           <select id="f-romanize" data-file-setting="romanize"></select>
+          <div class="subfield" id="f-romanize-opts">
+            <label for="f-romanize-script">Which</label>
+            <select id="f-romanize-script" data-file-setting="romanize_script"></select>
+          </div>
           <p class="hint">
-            नमस्ते → <code>namaste</code>, Тихо → <code>Tikho</code>, as a second
-            file. Indic scripts and Cyrillic.
+            नमस्ते → <code>namaste</code> or <code>نمستے</code>, as a second file.
           </p>
         </div>
 

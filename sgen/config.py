@@ -154,10 +154,13 @@ class Config:
     # mojibake. Every target language here has non-ASCII characters, so the BOM
     # earns its keep. Set "utf-8" if a player rejects it.
     encoding: str = "utf-8-sig"
-    # Also write Latin-script subtitles for non-Latin languages (नमस्ते ->
-    # "namaste"), as <name>.<lang>-Latn.srt alongside the native-script file.
-    # For readers who speak the language but don't read the script.
+    # Also write the subtitles in a second script, for readers who speak the
+    # language but don't read the script it is written in.
     romanize: bool = False
+    # Which second script. "latin" is <lang>-Latn.srt (नमस्ते -> "namaste") and
+    # works for Indic scripts and Cyrillic. "urdu" is <lang>-Arab.srt and is
+    # Hindi only — Hindi and Urdu are one language in two alphabets.
+    romanize_script: Literal["latin", "urdu", "both"] = "latin"
     # Also write translated subtitles.
     translate_to_english: bool = False
     # "nllb" translates the transcript text with a dedicated model — clearly
@@ -200,6 +203,8 @@ class Config:
             cfg.encoding = data["encoding"]
         if "romanize" in data:
             cfg.romanize = bool(data["romanize"])
+        if data.get("romanize_script"):
+            cfg.romanize_script = str(data["romanize_script"])
         if "translate_to_english" in data:
             cfg.translate_to_english = bool(data["translate_to_english"])
         for key in ("translate_engine", "translate_model", "translate_target"):

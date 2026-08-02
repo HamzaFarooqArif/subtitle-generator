@@ -152,10 +152,17 @@ const HELP = {
     "The cheapest accuracy win available: without it, an unusual name becomes whichever common word sounds nearest.",
   ],
   "opt-romanize": [
-    "A second subtitle file with the same words spelled in Latin letters.",
-    "On — you get clip.hi.srt and clip.hi-Latn.srt; नमस्ते also appears as “namaste”, Тихо as “Tikho”.",
+    "A second subtitle file with the same words in a different alphabet.",
+    "On — you get clip.hi.srt and a second file; नमस्ते also appears as “namaste”, Тихо as “Tikho”.",
     "Off — the original script only.",
-    "For a language you speak but do not read. Indic scripts and Cyrillic; other scripts say so in the job rather than doing nothing.",
+    "For a language you speak but do not read. A language with no converter says so on the job rather than doing nothing.",
+  ],
+  "opt-romanize-script": [
+    "Which alphabet the second file is written in.",
+    "Latin — namaste, Tikho. Works for Indic scripts and Cyrillic, and is the one to pick if you are unsure.",
+    "Urdu — نمستے. Hindi only, because Hindi and Urdu are one spoken language with two alphabets. Written clip.hi-Arab.srt.",
+    "Both — writes each file where it applies.",
+    "Urdu spelling is a guess for Perso-Arabic words: منزل is right, but a word outside the built-in list comes out sounding right and spelled naively. Fine for reading along, not for publishing.",
   ],
   "opt-translate-mode": [
     "Whether to also produce subtitles in another language.",
@@ -239,8 +246,12 @@ const HELP = {
     "Blank follows Global settings. e.g. the names of the people in this one recording.",
   ],
   "f-romanize": [
-    "Latin-script subtitles for this file.",
-    "Yes — also writes the hi-Latn file. No — never, even if Global settings says yes. That is the case a checkbox could not express.",
+    "A second script for this file.",
+    "Yes — write it. No — never, even if Global settings says yes. That is the case a checkbox could not express.",
+  ],
+  "f-romanize-script": [
+    "Which alphabet, for this file only.",
+    "Why it is worth having per file: in a folder of Hindi songs you might want Urdu for the ones you are learning to read and Latin for the rest.",
   ],
   "f-translate": [
     "Translation for this file only.",
@@ -510,6 +521,8 @@ async function loadMeta() {
   $("#opt-hotwords").value = defaults.hotwords || "";
   $("#opt-outdir").value = defaults.out_dir || "";
   $("#opt-romanize").checked = !!defaults.romanize;
+  $("#opt-romanize-script").value = defaults.romanize_script || "latin";
+  updateRomanizeRow();
   $("#opt-keep-suppressed").checked = !!defaults.keep_suppressed;
   const formats = defaults.formats || ["srt", "vtt"];
   $("#fmt-srt").checked = formats.includes("srt");
@@ -706,6 +719,12 @@ $("#btn-open-keys").addEventListener("click", () => {
   ($("#key-google").offsetParent ? $(`#key-${provider}`) : $("#keys-block")).focus?.();
 });
 $("#opt-profile").addEventListener("change", updateProfileHint);
+
+/** The script picker only means anything when a second script is wanted. */
+function updateRomanizeRow() {
+  $("#romanize-opts").style.display = $("#opt-romanize").checked ? "" : "none";
+}
+$("#opt-romanize").addEventListener("change", updateRomanizeRow);
 $("#opt-model").addEventListener("change", updateModelHint);
 $("#opt-translate-mode").addEventListener("change", () => {
   updateTranslateMode();
@@ -839,6 +858,7 @@ function currentOptions() {
     beam_size: +$("#opt-beam").value,
     formats,
     romanize: $("#opt-romanize").checked,
+    romanize_script: $("#opt-romanize-script").value,
     keep_suppressed: $("#opt-keep-suppressed").checked,
     translate: translateMode() === "local",
     cloud_provider:
@@ -1006,7 +1026,8 @@ const SETTING_NAMES = {
   profile: "profile",
   language: "language",
   hotwords: "names",
-  romanize: "Latin script",
+  romanize: "second script",
+  romanize_script: "which script",
   translate: "translation",
   translate_target: "target language",
 };
@@ -1205,6 +1226,8 @@ const TRANSLATE_LABELS = {
   local: "offline model",
 };
 
+const SCRIPT_LABELS = { latin: "Latin", urdu: "Urdu", both: "both" };
+
 /**
  * Fill the tab from the file's saved settings, with every control offering the
  * inherited value by name — "as in Global settings (music)" says what will happen if
@@ -1247,6 +1270,15 @@ function renderFileSettings() {
     ["yes", "Yes"],
     ["no", "No"],
   ], own.romanize === undefined ? "" : (own.romanize ? "yes" : "no"));
+
+  fillSelect($("#f-romanize-script"), [
+    ["", inherit(SCRIPT_LABELS[$("#opt-romanize-script").value] || "Latin")],
+    ...Object.entries(SCRIPT_LABELS),
+  ], own.romanize_script || "");
+  // Only worth showing when something is going to be written.
+  const secondScript = own.romanize ?? $("#opt-romanize").checked;
+  $("#f-romanize-opts").style.display =
+    (secondScript || own.romanize_script) ? "" : "none";
 
   fillSelect($("#f-translate"), [
     ["", inherit(TRANSLATE_LABELS[translateMode()] || translateMode())],
@@ -1317,6 +1349,7 @@ function fileSettingValues() {
   if (text("#f-language")) values.language = text("#f-language");
   if (text("#f-hotwords")) values.hotwords = text("#f-hotwords");
   if (text("#f-romanize")) values.romanize = text("#f-romanize") === "yes";
+  if (text("#f-romanize-script")) values.romanize_script = text("#f-romanize-script");
   if (text("#f-translate")) values.translate = text("#f-translate");
   if (text("#f-translate-target")) values.translate_target = text("#f-translate-target");
   return values;

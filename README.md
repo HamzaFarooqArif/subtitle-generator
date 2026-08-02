@@ -156,8 +156,10 @@ python -m sgen run "D:\videos\clip.mp4" --keep-suppressed
 # Re-break lines without re-transcribing (no GPU needed)
 python -m sgen reformat work\<id>\transcript.sgen.json --max-chars 32
 
-# Add Latin-script subtitles to something already transcribed (no GPU either)
-python -m sgen reformat work\<id>\transcript.sgen.json --romanize
+# Add a second script to something already transcribed (no GPU either)
+python -m sgen reformat work\<id>\transcript.sgen.json --script latin
+python -m sgen reformat work\<id>\transcript.sgen.json --script urdu   # Hindi
+python -m sgen reformat work\<id>\transcript.sgen.json --script both
 ```
 
 ## What it produces
@@ -418,21 +420,40 @@ song.hi-Latn.srt   Khairiyat puchho kabhi to kaifiyat puchho
 song.en.srt        Ask about the good, sometimes ask about the bad
 ```
 
-## Latin-script subtitles (romanization)
+## A second script
 
-For languages you speak but don't read: tick **"Also write Latin-script
-subtitles"**, or pass `--romanize`. नमस्ते becomes `namaste`. This is
+For a language you speak but don't read: tick **"Also write the subtitles in a
+second script"** and choose one, or pass `--script latin|urdu|both`. This is
 transliteration, not translation — same words, different letters — written as a
 second file so you keep both:
 
 ```
 song.hi.srt        खैरियत पूछो कभी तो कैफियत पूछो
 song.hi-Latn.srt   Khairiyat puchho kabhi to kaifiyat puchho
+song.hi-Arab.srt   خیریت پوچھو کبھی تو کیفیت پوچھو
 ```
 
-Supported: Hindi, Marathi, Nepali, Sanskrit, Bengali, Assamese, Punjabi,
-Gujarati, Odia, Tamil, Telugu, Kannada, Malayalam, Sinhala. Other scripts pass
-through unchanged.
+**Latin** covers Hindi, Marathi, Nepali, Sanskrit, Bengali, Assamese, Punjabi,
+Gujarati, Odia, Tamil, Telugu, Kannada, Malayalam, Sinhala, and Cyrillic
+(Russian, Ukrainian, Belarusian, Bulgarian, Serbian, Macedonian).
+
+**Urdu** is Hindi only, because Hindi and Urdu are one spoken language with two
+alphabets — [sgen/urdu.py](sgen/urdu.py). It is the harder direction, and the
+reason is worth knowing before you trust the output:
+
+> Devanagari → Latin is many-to-one and safe. Devanagari → Urdu is one-to-many
+> and guesses. Urdu keeps Perso-Arabic spelling for Perso-Arabic words — /z/ is
+> ز, ذ, ض or ظ by etymology — and Devanagari collapsed all of that centuries
+> ago. Going back needs a lexicon, not a table.
+
+So there is a built-in word list for the vocabulary a table cannot reach (`حق`,
+not `ہک`) and a rule for the future tense, which Urdu writes as two words with a
+nasal (जाऊँगा → `جاؤں گا`) where Devanagari joins it. A word outside the list
+comes out sounding right and spelled naively. Good enough to read along with; not
+something to publish.
+
+Asking for a script a language has no converter for is **reported on the job**,
+in the CLI and in the sidecar — never silently ignored.
 
 Hindi output follows what a Hindi speaker would actually type rather than a
 scholarly scheme — [sgen/translit.py](sgen/translit.py) deletes the word-final
@@ -512,7 +533,7 @@ the gating and normalization stages exist to handle.
 
 ## Status
 
-**Working, and exercised on real footage** (436 tests, 9 of them end-to-end):
+**Working, and exercised on real footage** (494 tests, 9 of them end-to-end):
 
 - probe and audio-track selection, extraction with `speechnorm` levelling
 - per-file language detection, with a no-VAD retry when speech detection rejects
@@ -522,9 +543,10 @@ the gating and normalization stages exist to handle.
   hallucination gating, file-level QC verdict
 - cue building with clause-aware line breaks, reading-speed enforcement and
   orphan control; `.srt`/`.vtt` output, UTF-8 with BOM
-- Latin-script transliteration for Indic scripts (नमस्ते → `namaste`) and
-  Cyrillic (Тихо, может звонит → `Tikho, mozhet zvonit`); a language with no
-  romanizer says so on the job instead of quietly writing nothing
+- a second script for readers who don't read the first: Latin for Indic scripts
+  (नमस्ते → `namaste`) and Cyrillic (Тихо, может звонит → `Tikho, mozhet zvonit`),
+  or **Urdu for Hindi** (मेरा हक है इश्क मेरा → `میرا حق ہے عشق میرا`); a language
+  with no converter says so on the job instead of quietly writing nothing
 - translation: Google or DeepL through the API, sending the numbered transcript
   as one document (see [DESIGN.md §4.10](DESIGN.md)); offline NLLB-200 as the
   privacy-preserving alternative; and a manual paste round trip needing no key

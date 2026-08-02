@@ -15,8 +15,8 @@ from .config import Config
 from .cues import Cue
 
 __all__ = [
-    "write_subtitles", "write_romanized", "romanize_or_explain", "write_sidecar",
-    "load_sidecar", "SIDECAR_VERSION",
+    "write_subtitles", "write_romanized", "write_urdu", "write_second_script",
+    "romanize_or_explain", "write_sidecar", "load_sidecar", "SIDECAR_VERSION",
 ]
 
 SIDECAR_VERSION = 1
@@ -104,6 +104,80 @@ def write_romanized(
     return write_subtitles(romanized, out_base, formats, f"{language}-Latn", encoding)
 
 
+def write_urdu(
+    cues: Sequence[Cue],
+    out_base: Path,
+    formats: Sequence[str],
+    language: str,
+    encoding: str = "utf-8-sig",
+) -> list[Path]:
+    """Write Urdu-script copies as `<name>.<lang>-Arab.<ext>`.
+
+    Hindi only, and empty for anything else — see `sgen.urdu`.
+    """
+    from . import urdu
+
+    if not urdu.supported(language):
+        return []
+
+    converted = [
+        Cue(
+            start=cue.start,
+            end=cue.end,
+            lines=urdu.convert_lines(cue.lines),
+            warnings=list(cue.warnings),
+        )
+        for cue in cues
+    ]
+    # BCP-47 again: hi-Arab is Hindi written in Arabic script, which is Urdu.
+    return write_subtitles(converted, out_base, formats, f"{language}-Arab", encoding)
+
+
+# What each choice is called, for the sentence explaining why it did nothing.
+_SCRIPT_NAMES = {
+    "latin": ("Latin-script", "Indic scripts and Cyrillic"),
+    "urdu": ("Urdu-script", "Hindi"),
+}
+
+
+def write_second_script(
+    cues: Sequence[Cue],
+    out_base: Path,
+    formats: Sequence[str],
+    language: str,
+    encoding: str = "utf-8-sig",
+    script: str = "latin",
+) -> tuple[list[Path], list[str]]:
+    """Write the requested second script(s), and say why any produced nothing.
+
+    Returning an empty list was enough for the caller but not for the user: a
+    ticked box produced no file, no error and no explanation, and the run looked
+    identical either way. The notes travel on the QC verdict, which the UI, the
+    CLI and the sidecar all already show.
+    """
+    wanted = ("latin", "urdu") if script == "both" else (script,)
+    writers = {"latin": write_romanized, "urdu": write_urdu}
+
+    paths: list[Path] = []
+    notes: list[str] = []
+    for name in wanted:
+        writer = writers.get(name)
+        if writer is None:
+            notes.append(f"{name!r} is not a script this can write.")
+            continue
+        written = writer(cues, out_base, formats, language, encoding)
+        if written:
+            paths.extend(written)
+            continue
+        label, available = _SCRIPT_NAMES[name]
+        notes.append(
+            f"{label} subtitles were asked for, but there is none for "
+            f"{language!r} — only the original script was written. Available for "
+            f"{available}."
+        )
+    return paths, notes
+
+
 def romanize_or_explain(
     cues: Sequence[Cue],
     out_base: Path,
@@ -111,21 +185,12 @@ def romanize_or_explain(
     language: str,
     encoding: str = "utf-8-sig",
 ) -> tuple[list[Path], str]:
-    """Write the Latin-script copies, or say why there are none.
-
-    Returning an empty list was enough for the caller but not for the user: a
-    ticked box produced no file, no error and no explanation, and the run looked
-    identical either way. The note travels on the QC verdict, which the UI, the
-    CLI and the sidecar all already show.
-    """
-    paths = write_romanized(cues, out_base, formats, language, encoding)
-    if paths:
-        return paths, ""
-    return [], (
-        f"Latin-script subtitles were asked for, but there is no romanizer for "
-        f"{language!r} — only the original script was written. Available for "
-        f"Indic scripts and Cyrillic."
+    """Latin script only. Kept because it reads better at the one call site that
+    wants exactly that."""
+    paths, notes = write_second_script(
+        cues, out_base, formats, language, encoding, "latin"
     )
+    return paths, notes[0] if notes else ""
 
 
 def write_sidecar(

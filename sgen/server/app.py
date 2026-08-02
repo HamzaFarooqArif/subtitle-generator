@@ -934,6 +934,7 @@ def create_app() -> FastAPI:
                 "language": user.defaults.language,
                 "hotwords": user.defaults.hotwords,
                 "romanize": user.defaults.romanize,
+                "romanize_script": user.defaults.romanize_script,
                 "keep_suppressed": user.defaults.keep_suppressed,
                 "out_dir": user.defaults.out_dir,
                 "translate_provider": user.defaults.translate.provider,

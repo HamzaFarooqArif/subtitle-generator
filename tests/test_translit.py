@@ -255,7 +255,7 @@ def test_a_language_with_no_romanizer_says_so(tmp_path):
     cues = [Cue(start=1.0, end=3.0, lines=["こんにちは"])]
     paths, note = romanize_or_explain(cues, tmp_path / "clip", ["srt"], "ja")
     assert paths == []
-    assert "ja" in note and "no romanizer" in note
+    assert "ja" in note and "Latin-script" in note
     assert "Cyrillic" in note, "it should say what is available"
 
 

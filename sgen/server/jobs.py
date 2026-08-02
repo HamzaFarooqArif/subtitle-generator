@@ -432,6 +432,8 @@ def build_config(options: dict[str, Any]) -> Config:
         cfg.gating.drop_suppressed = not bool(options["keep_suppressed"])
     if "romanize" in options:
         cfg.romanize = bool(options["romanize"])
+    if options.get("romanize_script") in ("latin", "urdu", "both"):
+        cfg.romanize_script = options["romanize_script"]
     # "Translate automatically" with the offline model chosen. The pipeline
     # already skips files that are in the target language.
     if "translate" not in options:

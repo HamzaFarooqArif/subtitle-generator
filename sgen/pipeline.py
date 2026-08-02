@@ -394,13 +394,14 @@ class Pipeline:
             built, out_base, cfg.formats, transcript.language, cfg.encoding
         )
         if cfg.romanize:
-            extra_outputs, note = write.romanize_or_explain(
-                built, out_base, cfg.formats, transcript.language, cfg.encoding
+            extra_outputs, notes = write.write_second_script(
+                built, out_base, cfg.formats, transcript.language, cfg.encoding,
+                cfg.romanize_script,
             )
             outputs.extend(extra_outputs)
-            if note:
+            for note in notes:
                 # Silence here meant a ticked box that did nothing: the run
-                # looked identical whether or not romanization was possible.
+                # looked identical whether or not the script was available.
                 verdict.notes.append(note)
                 log.warning("qc: %s", note)
 
@@ -560,10 +561,10 @@ def reformat_from_sidecar(sidecar: Path, cfg: Config) -> list[Path]:
     # needs, so a file already on disk should not have to go back to the GPU to
     # gain its Latin-script copy.
     if cfg.romanize:
-        extra, note = write.romanize_or_explain(
-            built, out_base, cfg.formats, language, cfg.encoding
+        extra, notes = write.write_second_script(
+            built, out_base, cfg.formats, language, cfg.encoding, cfg.romanize_script
         )
         outputs.extend(extra)
-        if note:
+        for note in notes:
             log.warning("%s", note)
     return outputs

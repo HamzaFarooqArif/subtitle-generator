@@ -97,6 +97,8 @@ class Defaults:
     language: str = ""            # "" => detect per file
     hotwords: str = ""            # names and places in your footage
     romanize: bool = False
+    # Which second script: latin | urdu | both. See Config.romanize_script.
+    romanize_script: str = "latin"
     keep_suppressed: bool = False
     # SRT only. WebVTT matters for browser players; for watching in VLC/MPC and
     # editing in Subtitle Edit, the second file is just clutter next to every
@@ -198,8 +200,27 @@ def load(path: Path | None = None) -> Settings:
                 provided=result.provided,
             )
 
+    _check_choices(result, path.name)
     _apply_environment(result)
     return result
+
+
+# Settings whose value is one of a fixed set. A typo here would otherwise be
+# accepted and then quietly do nothing, which is the failure this module exists
+# to avoid.
+CHOICES: dict[str, tuple[str, ...]] = {
+    "defaults.romanize_script": ("latin", "urdu", "both"),
+}
+
+
+def _check_choices(result: Settings, name: str) -> None:
+    for dotted, allowed in CHOICES.items():
+        section, _, field = dotted.partition(".")
+        value = getattr(getattr(result, section), field)
+        if value not in allowed:
+            raise SettingsError(
+                f"{name}: {dotted} must be one of {', '.join(allowed)}, got {value!r}"
+            )
 
 
 def load_or_default(path: Path | None = None) -> Settings:
@@ -272,6 +293,8 @@ def apply_defaults(cfg: Any, user: Settings | None = None) -> Any:
         cfg.asr.hotwords = d.hotwords or None
     if user.given("defaults.romanize"):
         cfg.romanize = d.romanize
+    if user.given("defaults.romanize_script"):
+        cfg.romanize_script = d.romanize_script
     if user.given("defaults.keep_suppressed"):
         cfg.gating.drop_suppressed = not d.keep_suppressed
     if user.given("defaults.formats") and d.formats:
@@ -312,6 +335,10 @@ defaults:
   language: ""
   hotwords: ""
   romanize: false
+  # latin writes <lang>-Latn.srt (नमस्ते -> namaste) for Indic scripts and
+  # Cyrillic. urdu writes <lang>-Arab.srt and is Hindi only — Hindi and Urdu are
+  # one language in two alphabets. both writes each where it applies.
+  romanize_script: latin   # latin | urdu | both
   keep_suppressed: false
   formats: [srt]
   out_dir: ""
@@ -412,6 +439,11 @@ def _validate_path(dotted: str, value: Any) -> None:
     if dataclasses.is_dataclass(target):
         raise SettingsError(f"{dotted!r} is a section, not a single property")
     _coerce(target, value, dotted)
+    allowed = CHOICES.get(dotted)
+    if allowed and value not in allowed:
+        raise SettingsError(
+            f"{dotted} must be one of {', '.join(allowed)}, got {value!r}"
+        )
 
 
 def parse_assignment(text: str) -> tuple[str, Any]:

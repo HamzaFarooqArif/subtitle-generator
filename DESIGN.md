@@ -421,7 +421,46 @@ they are not conservatism, they are the largest input this model survives.
 Improving local translation therefore means replacing the model with a
 document-capable one, not reshaping its requests.
 
-### 4.11 The cache is a record, so forgetting is a feature
+### 4.11 Two scripts, two completely different problems
+
+Writing a transcript in a second alphabet looks like one feature with a
+parameter. It is two, and they fail in opposite directions.
+
+**Devanagari → Latin is many-to-one.** Every Devanagari letter has one sensible
+Roman spelling. The work is all in readability conventions — deleting the
+word-final inherent vowel (`raam`, not `raama`), reading फ as /f/, six
+conventional spellings — and a mistake produces something slightly odd but
+still legible. `jitani` for जितनी is imperfect and harmless.
+
+**Devanagari → Urdu is one-to-many.** Urdu keeps Perso-Arabic orthography for
+Perso-Arabic vocabulary: /z/ is ز, ذ, ض or ظ; /s/ is س, ص or ث; /t/ is ت or ط —
+selected by the word's etymology, not by its sound. Devanagari discarded those
+distinctions centuries ago, writing स for all three /s/ letters and क for both
+/k/ and /q/. **The information needed to spell correctly is not in the input.**
+
+So no table can be right, and the design admits it rather than hiding it:
+
+- a **word list** for Perso-Arabic vocabulary, which in film dialogue is most of
+  the content words (`حق`, not the phonetically-correct-and-wrong `ہک`)
+- normalisation before lookup, because Whisper rarely writes nuktas and varies
+  between anusvara and a nasal consonant: मंज़िल, मंजिल and मन्जिल must all find
+  the same entry
+- a **future-tense rule**, because Urdu writes it as two words with a nasal
+  (जाऊँगा → `جاؤں گا`) where Devanagari joins them, and nearly every line of a
+  song lyric is a future verb. No letter table can produce that space.
+
+A word outside the list comes out phonetically right and orthographically naive.
+That is stated in the tooltip and the README rather than left for the user to
+discover, because the failure is invisible to anyone who cannot already read the
+script — which is precisely the person the feature is for.
+
+The same experiment on Russian and German is instructive: those have **no correct
+spelling to miss**, since a foreign word in Urdu script is a phonetic respelling
+by definition. The linguistically harder pair is the easier program. They are not
+shipped because "readable" is doing a lot of work there and nobody actually reads
+Russian in Urdu letters.
+
+### 4.12 The cache is a record, so forgetting is a feature
 
 `work/<content-id>/` exists for performance: it is what makes `reformat`,
 retiming and translation free, and what lets a re-added file skip the GPU

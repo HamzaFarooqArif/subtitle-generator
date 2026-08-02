@@ -41,10 +41,12 @@ ALLOWED = {
     "language": str,         # "" means detect
     "hotwords": str,
     "romanize": bool,
+    "romanize_script": str,  # latin | urdu | both | "" (use the app's setting)
     "translate": str,        # none | deepl | google | local | "" (use settings)
     "translate_target": str,
 }
 TRANSLATE_CHOICES = {"", "none", "deepl", "google", "local"}
+SCRIPT_CHOICES = {"", "latin", "urdu", "both"}
 
 HEADER = """\
 # Per-file settings for this folder, read by sgen.
@@ -56,7 +58,8 @@ HEADER = """\
 # profile:          home-video | music | verbatim
 # language:         auto detects; or a code like hi, de, ru
 # hotwords:         names in this file, comma-separated
-# romanize:         true also writes Latin-script subtitles (नमस्ते -> namaste)
+# romanize:         true also writes a second script (नमस्ते -> namaste)
+# romanize_script:  latin | urdu | both — urdu is Hindi only (نمستے)
 # translate:        none | deepl | google | local
 # translate_target: language code, default en
 """
@@ -132,6 +135,11 @@ def problems(folder: Path) -> list[str]:
                     f"{name}: translate must be one of "
                     f"{', '.join(sorted(c for c in TRANSLATE_CHOICES if c))}"
                 )
+            elif key == "romanize_script" and str(value).lower() not in SCRIPT_CHOICES:
+                issues.append(
+                    f"{name}: romanize_script must be one of "
+                    f"{', '.join(sorted(c for c in SCRIPT_CHOICES if c))}"
+                )
     return issues
 
 
@@ -174,6 +182,11 @@ def apply_to_options(base: dict[str, Any], override: dict[str, Any]) -> dict[str
         options["language"] = ""
     if "romanize" in override:
         options["romanize"] = override["romanize"]
+    # A file asking for a script is a file that wants a second script written,
+    # so it need not also say romanize: true.
+    if override.get("romanize_script"):
+        options["romanize_script"] = override["romanize_script"]
+        options["romanize"] = True
 
     choice = str(override.get("translate", "")).lower()
     if choice in ("none", ""):
@@ -229,6 +242,8 @@ def set_for_file(
             )
         if key == "translate" and str(value).lower() not in TRANSLATE_CHOICES:
             raise FolderConfigError(f"unknown translate choice {value!r}")
+        if key == "romanize_script" and str(value).lower() not in SCRIPT_CHOICES:
+            raise FolderConfigError(f"unknown script choice {value!r}")
 
     overrides = load(folder)
     key = key_for(folder, source)

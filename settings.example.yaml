@@ -53,9 +53,19 @@ defaults:
   # accuracy win available.
   hotwords: ""          # e.g. "Thomas, Oaxaca, Kreuzberg"
 
-  # Also write Latin-script subtitles for non-Latin languages, so नमस्ते comes
-  # out as "namaste" in a second file.
+  # Also write the subtitles in a second script, for a language you speak but
+  # don't read.
   romanize: false
+
+  # Which second script.
+  #   latin  <lang>-Latn.srt — नमस्ते -> namaste, Тихо -> Tikho.
+  #          Indic scripts and Cyrillic.
+  #   urdu   <lang>-Arab.srt — नमस्ते -> نمستے. Hindi only: Hindi and Urdu are
+  #          one spoken language with two alphabets. Perso-Arabic spelling is
+  #          taken from a built-in word list, so a word outside it comes out
+  #          sounding right and spelled naively.
+  #   both   each of the above, where it applies.
+  romanize_script: latin
 
   # Keep segments the hallucination gate removed, marked, instead of dropping
   # them. For auditing what was cut.
