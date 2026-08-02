@@ -479,12 +479,10 @@ $("#btn-up").addEventListener("click", () => {
   if (state.cwd?.parent) browse(state.cwd.parent);
 });
 $("#drive-select").addEventListener("change", (e) => browse(e.target.value));
-$("#btn-select-all").addEventListener("click", () => {
-  if (!state.cwd) return;
-  for (const f of state.cwd.files) state.selection.set(f.path, { name: f.name, size: f.size });
-  browse(state.cwd.path);
-  renderSelection();
-});
+// There was a "Select all media" button here. Folder mode replaced it: it took
+// this folder only, ignored what was already done, and had no way to reach a
+// file's own settings. "Check this folder" then "Tick all" is the same
+// instruction, said better — and two buttons that look alike are worse than one.
 $("#btn-clear-selection").addEventListener("click", () => {
   state.selection.clear();
   if (state.cwd) browse(state.cwd.path);
