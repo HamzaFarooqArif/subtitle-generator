@@ -10,6 +10,8 @@ const state = {
   library: [],            // transcripts on disk, survives server restarts
   providers: null,        // which online translators have keys
   scan: null,             // last folder scan: what still needs doing
+  excluded: new Set(),    // folder-mode: unfinished files the user unticked
+  included: new Set(),    // folder-mode: finished files the user asked to redo
   translate: { contentId: null, name: "" },
   tune: { contentId: null, values: {}, timer: null },
 };
@@ -417,8 +419,11 @@ async function browse(path) {
   state.cwd = data;
   $("#crumbs").textContent = data.path;
   if (state.scan && state.scan.folder !== data.path) {
-    // A scan of the folder we just left says nothing about this one.
+    // A scan of the folder we just left says nothing about this one, and neither
+    // do the ticks that were made against it.
     state.scan = null;
+    state.excluded.clear();
+    state.included.clear();
     $("#scan-detail").innerHTML = "";
     $("#scan-summary").textContent =
       "Select nothing and the button below takes this whole folder, skipping "
@@ -531,19 +536,10 @@ async function scanFolder() {
     });
     state.scan = scan;
     $("#scan-summary").textContent = scan.summary;
-    updateSubmitButton();
 
-    // Show only what needs work, plus a line for the damaged ones: a list of 40
-    // finished files is noise.
-    const interesting = scan.files.filter((f) => f.state !== "done").slice(0, 40);
-    $("#scan-detail").innerHTML = interesting.length
-      ? `<ul class="scan-list">${interesting.map((f) =>
-          `<li class="scan-${f.state}">
-             <span class="scan-name">${escapeHtml(f.name)}</span>
-             <span class="scan-state">${STATE_LABELS[f.state] || f.state}</span>
-             <span class="scan-why">${escapeHtml(f.reason)}</span>
-           </li>`).join("")}</ul>`
-      : "";
+    // The list first: the button's label counts the boxes in it.
+    renderScanList(scan);
+    updateSubmitButton();
     return scan;
   } catch (err) {
     $("#scan-summary").textContent = `Could not check the folder: ${err.message}`;
@@ -552,6 +548,81 @@ async function scanFolder() {
     return null;
   }
 }
+
+/**
+ * The scan list, with a checkbox per video.
+ *
+ * Everything the scan found is listed, not only the unfinished ones: the useful
+ * question is often "skip that one" or "redo that one", and neither is
+ * answerable from a read-only summary. Files needing work start ticked, finished
+ * files start unticked — so pressing the button does the obvious thing without
+ * any clicking, and every deviation from it is one click.
+ */
+function renderScanList(scan) {
+  if (!scan.files.length) {
+    $("#scan-detail").innerHTML = "";
+    return;
+  }
+  const rows = scan.files.map((f) => {
+    const checked = f.state !== "done" && !state.excluded.has(f.path);
+    const forced = f.state === "done" && state.included.has(f.path);
+    return `<li class="scan-${f.state}">
+      <label class="check scan-pick">
+        <input type="checkbox" data-scan-path="${encodeURIComponent(f.path)}"
+          ${checked || forced ? "checked" : ""}>
+        <span class="scan-name">${escapeHtml(f.name)}</span>
+      </label>
+      <span class="scan-state">${STATE_LABELS[f.state] || f.state}</span>
+      <span class="scan-why">${escapeHtml(f.reason)}</span>
+    </li>`;
+  });
+  $("#scan-detail").innerHTML = `
+    <div class="scan-actions">
+      <button class="btn ghost tiny" id="btn-scan-all">Tick all</button>
+      <button class="btn ghost tiny" id="btn-scan-none">Untick all</button>
+      <button class="btn ghost tiny" id="btn-scan-todo">Only the unfinished</button>
+    </div>
+    <ul class="scan-list">${rows.join("")}</ul>`;
+}
+
+/** Paths the user has ticked — what a folder submit will actually queue. */
+function scanChecked() {
+  return $$("#scan-detail input[data-scan-path]:checked")
+    .map((box) => decodeURIComponent(box.dataset.scanPath));
+}
+
+$("#scan-detail").addEventListener("change", (event) => {
+  const box = event.target.closest("input[data-scan-path]");
+  if (!box) return;
+  const path = decodeURIComponent(box.dataset.scanPath);
+  const file = state.scan?.files.find((f) => f.path === path);
+  // Remember the deviation, not the state, so a re-scan keeps the user's intent.
+  if (file?.state === "done") {
+    box.checked ? state.included.add(path) : state.included.delete(path);
+  } else {
+    box.checked ? state.excluded.delete(path) : state.excluded.add(path);
+  }
+  updateSubmitButton();
+});
+
+$("#scan-detail").addEventListener("click", (event) => {
+  const id = event.target.id;
+  if (!["btn-scan-all", "btn-scan-none", "btn-scan-todo"].includes(id)) return;
+  for (const box of $$("#scan-detail input[data-scan-path]")) {
+    const path = decodeURIComponent(box.dataset.scanPath);
+    const file = state.scan?.files.find((f) => f.path === path);
+    const wanted = id === "btn-scan-all" ? true
+                 : id === "btn-scan-none" ? false
+                 : file?.state !== "done";
+    box.checked = wanted;
+    if (file?.state === "done") {
+      wanted ? state.included.add(path) : state.included.delete(path);
+    } else {
+      wanted ? state.excluded.delete(path) : state.excluded.add(path);
+    }
+  }
+  updateSubmitButton();
+});
 
 $("#btn-scan-folder").addEventListener("click", scanFolder);
 $("#opt-recursive").addEventListener("change", () => {
@@ -594,11 +665,11 @@ function updateSubmitButton() {
   // decides again at submit time so the two can never disagree.
   const scan = state.scan && state.scan.folder === state.cwd.path ? state.scan : null;
   if (scan) {
-    const todo = scan.total - scan.counts.done;
-    btn.disabled = todo === 0;
-    btn.textContent = todo
-      ? `Transcribe this folder — ${todo} to do`
-      : "This folder is done";
+    const ticked = scanChecked().length;
+    btn.disabled = ticked === 0;
+    btn.textContent = ticked
+      ? `Transcribe ${ticked} file${ticked === 1 ? "" : "s"}`
+      : (scan.total === scan.counts.done ? "This folder is done" : "Nothing ticked");
     return;
   }
   btn.disabled = false;
@@ -621,6 +692,11 @@ $("#btn-submit").addEventListener("click", async () => {
 
   const folderMode = state.selection.size === 0;
   if (folderMode && !state.cwd) return;
+  // With a scan on screen, the ticked boxes are the instruction — send those
+  // paths rather than the folder, so unticking one actually excludes it.
+  const scan = state.scan && state.scan.folder === state.cwd?.path ? state.scan : null;
+  const ticked = folderMode && scan ? scanChecked() : null;
+  if (ticked && !ticked.length) return;
 
   const btn = $("#btn-submit");
   btn.disabled = true;
@@ -628,12 +704,14 @@ $("#btn-submit").addEventListener("click", async () => {
     const res = await api("/api/jobs", {
       method: "POST",
       body: JSON.stringify({
-        paths: folderMode ? [state.cwd.path] : Array.from(state.selection.keys()),
+        paths: ticked
+          ? ticked
+          : folderMode ? [state.cwd.path] : Array.from(state.selection.keys()),
         out_dir: $("#opt-outdir").value.trim() || null,
         options,
-        // Only a whole folder gets the skip: an explicitly picked file should be
-        // transcribed because you picked it.
-        skip_done: folderMode,
+        // Only an unreviewed whole folder gets the skip. Once files are ticked
+        // by hand — in the list or the scan — they run because they were picked.
+        skip_done: folderMode && !ticked,
         recursive: $("#opt-recursive").checked,
       }),
     });
