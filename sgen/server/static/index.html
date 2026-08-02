@@ -60,17 +60,14 @@
       <div class="folder-mode">
         <div class="inline">
           <button class="btn" id="btn-scan-folder">Check this folder</button>
-          <button class="btn primary" id="btn-queue-folder" disabled>
-            Transcribe folder
-          </button>
           <label class="check" for="opt-recursive">
             <input type="checkbox" id="opt-recursive" checked> include subfolders
           </label>
         </div>
         <p class="hint" id="scan-summary">
-          Queues every video in the current folder and skips the ones that already
-          have subtitles for your current settings. Safe to interrupt: run it
-          again and it continues where it stopped.
+          Select nothing and the button below takes the whole folder, skipping
+          videos that already have subtitles for your current settings. Safe to
+          interrupt: run it again and it continues where it stopped.
         </p>
         <div id="scan-detail"></div>
       </div>

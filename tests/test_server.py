@@ -203,8 +203,16 @@ def test_overwrite_beats_skip_done(client, tmp_path):
 def test_folder_mode_is_in_the_page(client):
     body = client.get("/").text
     assert 'id="btn-scan-folder"' in body
-    assert 'id="btn-queue-folder"' in body
     assert 'id="opt-recursive"' in body
+
+
+def test_there_is_only_one_transcribe_button(client):
+    """Two buttons both reading "Transcribe N files" — one for the selection, one
+    for the folder — made the working one ambiguous. The single button changes
+    what it does: selection if there is one, whole folder if not."""
+    body = client.get("/").text
+    assert body.count('id="btn-submit"') == 1
+    assert "btn-queue-folder" not in body
 
 
 def test_providers_report_which_languages_each_engine_reaches(tmp_path, monkeypatch):

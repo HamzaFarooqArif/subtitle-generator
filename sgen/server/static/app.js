@@ -327,7 +327,7 @@ function updateTranslateMode() {
  * lives, it survives a restart, and it can be read and changed by hand. A
  * setting you cannot find is a setting you cannot turn off.
  */
-$("#opt-translate-remember").addEventListener("change", async () => {
+async function saveTranslateDefault() {
   const on = $("#opt-translate-remember").checked;
   const mode = translateMode();
   try {
@@ -340,13 +340,41 @@ $("#opt-translate-remember").addEventListener("change", async () => {
       }),
     });
     $("#translate-remember-status").textContent = res.auto
-      ? `saved — every non-${res.target} file will be translated`
+      ? `saved — every non-${res.target} file will be translated with ${res.provider}`
       : "saved — back to asking per run";
   } catch (err) {
-    $("#opt-translate-remember").checked = !on;
+    $("#translate-remember-status").textContent = "";
     toast(`Could not save that: ${err.message}`, "error");
+    throw err;
+  }
+}
+
+$("#opt-translate-remember").addEventListener("change", async () => {
+  const on = $("#opt-translate-remember").checked;
+  try {
+    await saveTranslateDefault();
+  } catch {
+    $("#opt-translate-remember").checked = !on;   // the file did not change
   }
 });
+
+/**
+ * Keep the saved default in step with the controls while "Always do this" is on.
+ *
+ * Without this the page could show "Offline model" with the box ticked while the
+ * file still said `deepl` — the display claiming one thing and the next run doing
+ * another. The tick means "remember what I have selected", so a change to the
+ * selection is a change to what is remembered.
+ */
+async function syncRememberedDefault() {
+  if (!$("#opt-translate-remember").checked) return;
+  if (translateMode() === "none") {
+    $("#opt-translate-remember").checked = false;
+  }
+  try {
+    await saveTranslateDefault();
+  } catch { /* already reported */ }
+}
 
 /** Jump to where keys are entered, and open the panel so it is not another
  *  click away. This is the button that makes cloud translation findable. */
@@ -363,8 +391,14 @@ $("#btn-open-keys").addEventListener("click", () => {
 });
 $("#opt-profile").addEventListener("change", updateProfileHint);
 $("#opt-model").addEventListener("change", updateModelHint);
-$("#opt-translate-mode").addEventListener("change", updateTranslateMode);
-$("#opt-translate-target").addEventListener("change", updateTranslateMode);
+$("#opt-translate-mode").addEventListener("change", () => {
+  updateTranslateMode();
+  syncRememberedDefault();
+});
+$("#opt-translate-target").addEventListener("change", () => {
+  updateTranslateMode();
+  syncRememberedDefault();
+});
 
 /* =================================================================== browser */
 
@@ -382,6 +416,15 @@ async function browse(path) {
   }
   state.cwd = data;
   $("#crumbs").textContent = data.path;
+  if (state.scan && state.scan.folder !== data.path) {
+    // A scan of the folder we just left says nothing about this one.
+    state.scan = null;
+    $("#scan-detail").innerHTML = "";
+    $("#scan-summary").textContent =
+      "Select nothing and the button below takes this whole folder, skipping "
+      + "videos that already have subtitles for your current settings.";
+  }
+  updateSubmitButton();
 
   const rows = data.dirs.map((dir) =>
     `<li data-dir="${encodeURIComponent(dir.path)}">
@@ -488,11 +531,7 @@ async function scanFolder() {
     });
     state.scan = scan;
     $("#scan-summary").textContent = scan.summary;
-    const todo = scan.total - scan.counts.done;
-    $("#btn-queue-folder").disabled = todo === 0;
-    $("#btn-queue-folder").textContent = todo
-      ? `Transcribe ${todo} file${todo === 1 ? "" : "s"}`
-      : "Nothing to do";
+    updateSubmitButton();
 
     // Show only what needs work, plus a line for the damaged ones: a list of 40
     // finished files is noise.
@@ -508,7 +547,8 @@ async function scanFolder() {
     return scan;
   } catch (err) {
     $("#scan-summary").textContent = `Could not check the folder: ${err.message}`;
-    $("#btn-queue-folder").disabled = true;
+    state.scan = null;
+    updateSubmitButton();
     return null;
   }
 }
@@ -516,32 +556,7 @@ async function scanFolder() {
 $("#btn-scan-folder").addEventListener("click", scanFolder);
 $("#opt-recursive").addEventListener("change", () => {
   if (state.scan) scanFolder();
-});
-
-$("#btn-queue-folder").addEventListener("click", async () => {
-  if (!state.cwd) return;
-  const btn = $("#btn-queue-folder");
-  btn.disabled = true;
-  try {
-    const res = await api("/api/jobs", {
-      method: "POST",
-      body: JSON.stringify({
-        paths: [state.cwd.path],
-        out_dir: $("#opt-outdir").value.trim() || null,
-        options: currentOptions(),
-        skip_done: true,
-        recursive: $("#opt-recursive").checked,
-      }),
-    });
-    const skipped = res.skipped_count
-      ? `, skipped ${res.skipped_count} already done` : "";
-    toast(`Queued ${res.jobs.length} file${res.jobs.length === 1 ? "" : "s"}${skipped}.`,
-          "ok");
-    await scanFolder();
-  } catch (err) {
-    toast(`Could not queue the folder: ${err.message}`, "error");
-    btn.disabled = false;
-  }
+  updateSubmitButton();
 });
 
 function renderSelection() {
@@ -551,9 +566,43 @@ function renderSelection() {
     .map(([path, meta]) =>
       `<li>${escapeHtml(meta.name)}<button data-drop="${encodeURIComponent(path)}">×</button></li>`)
     .join("");
+  updateSubmitButton();
+}
+
+/**
+ * One button, two meanings — because two buttons that both said "Transcribe N
+ * files" was worse.
+ *
+ * Selecting files is the explicit act, so a selection always wins. With nothing
+ * selected the button takes the whole folder and skips what is already done,
+ * which is the common case for a directory of holiday videos.
+ */
+function updateSubmitButton() {
   const btn = $("#btn-submit");
-  btn.disabled = count === 0;
-  btn.textContent = `Transcribe ${count} file${count === 1 ? "" : "s"}`;
+  const count = state.selection.size;
+  if (count) {
+    btn.disabled = false;
+    btn.textContent = `Transcribe ${count} selected file${count === 1 ? "" : "s"}`;
+    return;
+  }
+  if (!state.cwd) {
+    btn.disabled = true;
+    btn.textContent = "Transcribe";
+    return;
+  }
+  // A scan is only a preview; the button works without one, and the server
+  // decides again at submit time so the two can never disagree.
+  const scan = state.scan && state.scan.folder === state.cwd.path ? state.scan : null;
+  if (scan) {
+    const todo = scan.total - scan.counts.done;
+    btn.disabled = todo === 0;
+    btn.textContent = todo
+      ? `Transcribe this folder — ${todo} to do`
+      : "This folder is done";
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = "Transcribe this folder";
 }
 
 $("#selection-list").addEventListener("click", (event) => {
@@ -570,25 +619,40 @@ $("#btn-submit").addEventListener("click", async () => {
   const options = currentOptions();
   if (!options.formats.length) return toast("Pick at least one output format.", "error");
 
+  const folderMode = state.selection.size === 0;
+  if (folderMode && !state.cwd) return;
+
   const btn = $("#btn-submit");
   btn.disabled = true;
   try {
     const res = await api("/api/jobs", {
       method: "POST",
       body: JSON.stringify({
-        paths: Array.from(state.selection.keys()),
+        paths: folderMode ? [state.cwd.path] : Array.from(state.selection.keys()),
         out_dir: $("#opt-outdir").value.trim() || null,
         options,
+        // Only a whole folder gets the skip: an explicitly picked file should be
+        // transcribed because you picked it.
+        skip_done: folderMode,
+        recursive: $("#opt-recursive").checked,
       }),
     });
-    toast(`Queued ${res.jobs.length} file${res.jobs.length === 1 ? "" : "s"}.`, "ok");
+    const skipped = res.skipped_count
+      ? `, skipped ${res.skipped_count} already done` : "";
+    toast(
+      res.jobs.length
+        ? `Queued ${res.jobs.length} file${res.jobs.length === 1 ? "" : "s"}${skipped}.`
+        : `Nothing to do — all ${res.skipped_count} files already have subtitles.`,
+      res.jobs.length ? "ok" : "",
+    );
     state.selection.clear();
-    if (state.cwd) browse(state.cwd.path);
+    if (state.cwd) await browse(state.cwd.path);
+    if (folderMode && state.scan) await scanFolder();
     renderSelection();
   } catch (err) {
     toast(`Could not queue: ${err.message}`, "error");
   } finally {
-    btn.disabled = state.selection.size === 0;
+    updateSubmitButton();
   }
 });
 
