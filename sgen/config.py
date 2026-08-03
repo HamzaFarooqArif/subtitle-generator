@@ -66,6 +66,24 @@ class AsrConfig:
     vad_filter: bool = True
     vad_min_silence_ms: int = 500
     vad_speech_pad_ms: int = 200
+    # Decode long stretches that came back empty a second time, on their own.
+    #
+    # Whisper decodes in 30-second windows and chooses its own first timestamp
+    # inside each one. When it starts that timestamp late, everything before it is
+    # simply never transcribed — measured on a Punjabi song: 80 of 184 seconds
+    # produced nothing, and three of those gaps transcribed perfectly when handed
+    # over as clips of their own. Repeated lines are hit hardest, because the
+    # repetition makes the window look like a failed decode.
+    fill_gaps: bool = True
+    # Only gaps at least this long. Shorter ones are usually real silence, and a
+    # second decode of two seconds of room noise is where hallucinations come
+    # from.
+    gap_min_seconds: float = 6.0
+    # How many times to go round. Measured on the Punjabi song: one round took ASR
+    # coverage from 56% to 75% and produced five more cues; a second took coverage
+    # to 84% and produced **no** further cues — everything it found was decode
+    # loops the gate then suppressed. So one, with the knob left here.
+    gap_rounds: int = 1
     # Split decode windows to sentence granularity before gating, so one
     # aggregate signal cannot discard half a minute of correct speech.
     resegment: bool = True

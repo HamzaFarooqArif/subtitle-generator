@@ -22,6 +22,14 @@ asr:
   # file means taking the sequential path.
   batched: false
   vad_filter: false
+  # Whisper picks its own first timestamp inside every 30-second window, and a
+  # late pick means the audio before it is never transcribed — no warning, just
+  # absence. Songs are hit hardest, and repeated lines worst of all, because the
+  # repetition makes a window look like a failed decode. On a 184-second Punjabi
+  # track 80 seconds produced nothing, including the repeated title hook, and
+  # every gap transcribed correctly when handed back on its own.
+  fill_gaps: true
+  gap_min_seconds: 6.0
   beam_size: 5
   best_of: 5
   temperature: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
@@ -48,6 +56,9 @@ gating:
   min_mean_word_prob: 0.20
   min_words_per_second: 0.2
   min_span_for_wps_check: 6.0
+  # A chorus is the same line three or four times in a row, which the default
+  # (2) reads as a decode loop and deletes. Five in a row is still a loop.
+  max_repeat_of_neighbour: 4
   drop_suppressed: true
 
 qc:

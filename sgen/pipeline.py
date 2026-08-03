@@ -251,6 +251,73 @@ class Pipeline:
             english_cues, out_base, cfg.formats, "en", cfg.encoding
         )
 
+    def _fill_gaps(
+        self,
+        wav: Path,
+        language: str | None,
+        transcript,
+        duration: float,
+        work: Path,
+        report,
+    ) -> float:
+        """Decode long empty stretches again, each on its own. Returns seconds won.
+
+        Whisper picks its own first timestamp inside every 30-second window, and
+        when it picks a late one the audio before it is never transcribed at all —
+        no warning, no empty segment, just absence. Measured on a Punjabi song: 80
+        of 184 seconds produced nothing, and the three largest gaps each
+        transcribed correctly when handed over as a clip. Repeated lines suffer
+        most, because the repetition makes a window look like a failed decode.
+
+        Handing the span back on its own removes the surrounding context that
+        caused the skip. Anything recovered still goes through gating, which is
+        what protects an instrumental passage from being filled with invention.
+        """
+        cfg = self.cfg
+        clips = work / "gaps"
+        won = 0.0
+        # A recovered clip usually leaves a smaller gap of its own — the decode
+        # skips the start of the clip exactly as it skipped the start of the
+        # window. A second round picks those up; a third finds almost nothing and
+        # is only more chances to hallucinate.
+        for round_number in range(cfg.asr.gap_rounds):
+            gaps = find_gaps(transcript.segments, duration, cfg.asr.gap_min_seconds)
+            if not gaps:
+                break
+            log.info(
+                "%d stretch(es) came back empty (%.0fs total); decoding them again",
+                len(gaps), sum(end - start for start, end in gaps),
+            )
+            recovered: list = []
+            for index, (start, end) in enumerate(gaps):
+                report("transcribe", index / max(1, len(gaps)))
+                clip = clips / f"r{round_number}g{index:02d}.wav"
+                try:
+                    extract.slice_audio(wav, clip, start, end - start)
+                    piece = self.recognizer.transcribe(
+                        clip, language=language, clip_offset=start,
+                        vad_filter=False, force_sequential=True,
+                    )
+                except Exception:
+                    log.warning(
+                        "could not re-decode %.1f-%.1fs", start, end, exc_info=True
+                    )
+                    continue
+                found = [s for s in piece.segments if s.text.strip()]
+                if found:
+                    log.info(
+                        "  %.1f-%.1fs recovered %d segment(s): %s",
+                        start, end, len(found), found[0].text.strip()[:60],
+                    )
+                    recovered.extend(found)
+
+            if not recovered:
+                break
+            transcript.segments.extend(recovered)
+            transcript.segments.sort(key=lambda s: s.start)
+            won += sum(s.end - s.start for s in recovered)
+        return won
+
     def process(
         self,
         source: Path,
@@ -346,6 +413,12 @@ class Pipeline:
                         100 * recovered / audio_duration,
                         100 * covered / audio_duration,
                     )
+        filled = 0.0
+        if cfg.asr.fill_gaps:
+            filled = self._fill_gaps(
+                wav, language, transcript, audio_duration, work, report
+            )
+
         if not cfg.asr.language:
             transcript.language_probability = confidence
         if not transcript.duration:
@@ -434,6 +507,7 @@ class Pipeline:
                     "pinned": bool(cfg.asr.language),
                 },
                 "retried_without_vad": retried,
+                "gap_seconds_recovered": round(filled, 2),
             },
         )
 
@@ -454,6 +528,28 @@ class Pipeline:
 
 
 _TERMINALS = ".!?…।॥۔。！？"
+
+
+def find_gaps(
+    segments: Sequence[Segment], duration: float, min_seconds: float
+) -> list[tuple[float, float]]:
+    """Stretches of at least `min_seconds` that no segment covers.
+
+    Includes the head and the tail: a decode that starts thirty seconds in has
+    lost thirty seconds, and nothing downstream would ever notice.
+    """
+    if duration <= 0:
+        return []
+    spans = sorted((s.start, s.end) for s in segments)
+    gaps: list[tuple[float, float]] = []
+    edge = 0.0
+    for start, end in spans:
+        if start - edge >= min_seconds:
+            gaps.append((edge, start))
+        edge = max(edge, end)
+    if duration - edge >= min_seconds:
+        gaps.append((edge, duration))
+    return gaps
 
 
 def punctuation_density(segments: Sequence[Segment]) -> float:

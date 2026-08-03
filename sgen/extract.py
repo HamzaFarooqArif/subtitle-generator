@@ -30,6 +30,27 @@ def _filters(cfg: AudioConfig, stream: AudioStream) -> str:
     return ",".join(chain)
 
 
+def slice_audio(source: Path, dest: Path, start: float, duration: float) -> Path:
+    """Copy `duration` seconds of an already-extracted WAV, starting at `start`.
+
+    Used to hand one span back to the recogniser on its own. The audio is already
+    mono 16 kHz PCM, so this is a copy rather than a re-encode.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg.run(
+        "ffmpeg",
+        [
+            "-hide_banner", "-nostdin", "-y",
+            "-ss", f"{start:.3f}", "-t", f"{duration:.3f}",
+            "-i", str(source),
+            "-c:a", "copy" if dest.suffix == source.suffix else "pcm_s16le",
+            str(dest),
+        ],
+        capture=False,
+    )
+    return dest
+
+
 def extract_audio(
     info: MediaInfo,
     stream: AudioStream,

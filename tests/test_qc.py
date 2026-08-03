@@ -179,3 +179,83 @@ def test_sagolun_is_now_blacklisted():
     gating.apply([s], GatingConfig())
     assert s.suppressed
     assert s.suppress_reason == "hallucination_phrase"
+
+
+# --------------------------------------------------------------------------- #
+# gaps where the decoder produced nothing
+#
+# Whisper picks its own first timestamp inside every 30-second window, and a late
+# pick means the audio before it is never transcribed — no warning, no empty
+# segment, just absence. Measured on a Punjabi song: 80 of 184 seconds produced
+# nothing, including the repeated title hook, and each gap transcribed correctly
+# when handed back as a clip of its own.
+# --------------------------------------------------------------------------- #
+
+def _span(start, end, text="x"):
+    from sgen.asr import Segment
+
+    return Segment(start=start, end=end, text=text)
+
+
+def test_no_gaps_in_continuous_speech():
+    from sgen.pipeline import find_gaps
+
+    segments = [_span(0, 10), _span(10, 20), _span(20, 30)]
+    assert find_gaps(segments, 30.0, 6.0) == []
+
+
+def test_a_long_hole_in_the_middle_is_found():
+    from sgen.pipeline import find_gaps
+
+    segments = [_span(0, 14.5), _span(38.6, 43.3)]
+    assert find_gaps(segments, 43.3, 6.0) == [(14.5, 38.6)]
+
+
+def test_short_holes_are_left_alone():
+    """Two seconds of room noise decoded again is where hallucinations come
+    from; only stretches worth a second pass are returned."""
+    from sgen.pipeline import find_gaps
+
+    segments = [_span(0, 10), _span(13, 20)]
+    assert find_gaps(segments, 20.0, 6.0) == []
+
+
+def test_the_head_counts():
+    """A decode that starts thirty seconds in has lost thirty seconds, and
+    nothing downstream would notice."""
+    from sgen.pipeline import find_gaps
+
+    assert find_gaps([_span(30, 40)], 40.0, 6.0) == [(0.0, 30.0)]
+
+
+def test_the_tail_counts():
+    from sgen.pipeline import find_gaps
+
+    assert find_gaps([_span(0, 10)], 40.0, 6.0) == [(10.0, 40.0)]
+
+
+def test_overlapping_segments_do_not_invent_a_gap():
+    from sgen.pipeline import find_gaps
+
+    segments = [_span(0, 20), _span(5, 12), _span(19, 30)]
+    assert find_gaps(segments, 30.0, 6.0) == []
+
+
+def test_an_empty_transcript_is_one_whole_gap():
+    from sgen.pipeline import find_gaps
+
+    assert find_gaps([], 100.0, 6.0) == [(0.0, 100.0)]
+
+
+def test_unknown_duration_is_not_a_gap():
+    from sgen.pipeline import find_gaps
+
+    assert find_gaps([_span(0, 10)], 0.0, 6.0) == []
+
+
+def test_songs_allow_a_chorus_to_repeat():
+    """A chorus is the same line three or four times over; the default reads the
+    third as a decode loop and deletes it."""
+    from sgen.config import Config
+
+    assert Config.load("music").gating.max_repeat_of_neighbour > Config().gating.max_repeat_of_neighbour
