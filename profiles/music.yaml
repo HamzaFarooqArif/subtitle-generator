@@ -32,7 +32,22 @@ asr:
   gap_min_seconds: 6.0
   beam_size: 5
   best_of: 5
-  temperature: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+  # No temperature fallback, unlike every other profile.
+  #
+  # Whisper retries a window that fails its confidence thresholds at a higher
+  # temperature, and those retries are *sampled* — so a file where many windows
+  # fail decodes differently every run. Songs fail constantly, because a repeated
+  # chorus looks like a decode loop, so the retry fires on correct audio and
+  # invents text. Measured on the Punjabi track, three runs with fallback: two
+  # were byte-identical to temperature 0, and the third gained 6% coverage while
+  # producing "ਵੇ ਤੁ ਲ shipped ਵੇ" and "wzglਾ" — English fragments welded into
+  # Gurmukhi words. Zero benefit twice, corruption once.
+  #
+  # The cost is real and belongs here: a genuinely hard window that fallback
+  # would have recovered now returns nothing instead. Gap filling below is the
+  # safer version of the same idea, because it re-decodes the gap on its own
+  # rather than sampling a window that already failed.
+  temperature: [0.0]
   condition_on_previous_text: false
   repetition_penalty: 1.05
   word_timestamps: true

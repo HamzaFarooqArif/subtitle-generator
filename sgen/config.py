@@ -136,6 +136,14 @@ class QcConfig:
     # which otherwise silently discards the entire file.
     retry_without_vad: bool = True
     retry_coverage_threshold: float = 0.15
+    # Check that the transcript is written in one alphabet. Every other gate here
+    # is acoustic, so a decode that spelt one letter of a Gurmukhi word in
+    # Devanagari, or dropped the English word "shipped" into a Punjabi song,
+    # scored perfectly and was written out with suspect: false.
+    check_scripts: bool = True
+    # Below this share of the words, a foreign alphabet is corruption; above it,
+    # someone is genuinely switching language and that is not a fault.
+    max_foreign_word_fraction: float = 0.05
 
 
 @dataclass

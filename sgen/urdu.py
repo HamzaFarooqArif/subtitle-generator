@@ -66,6 +66,11 @@ DEVA_INITIAL_VOWELS = {
     "ए": "اے", "ऐ": "اے", "ओ": "او", "औ": "او", "ऋ": "ر",
 }
 
+# Word-initial e/ai before a consonant is alif + ye, not alif + bari-ye: एक is
+# ایک and ऐसा is ایسا, where "اےک" is not a word. اے on its own is the vocative,
+# which is why the plain table above keeps it for a vowel standing alone.
+DEVA_INITIAL_BEFORE_CONSONANT = {"ए": "ای", "ऐ": "ای"}
+
 # A vowel meeting another vowel takes a hamza seat: हुई is ہوئی, not ہوی, and
 # गाओ is گاؤ. Without this the two vowels run together into one letter and the
 # word stops being readable.
@@ -110,6 +115,12 @@ DEVA_WORDS = {
     "नजरें": "نظریں", "गजल": "غزل", "जज्बात": "جذبات", "शराब": "شراب",
     "मुसाफिर": "مسافر", "आखिर": "آخر", "जख्म": "زخم", "गम": "غم",
     "इंसान": "انسان", "खामोश": "خاموش", "मासूम": "معصوم", "मजाक": "مذاق",
+    # Measured wrong on the Khairiyat transcript: the letter tables gave ہیسیت
+    # for a word Urdu spells with ح and ث, and دوانے for one that needs the ی.
+    "हैसियत": "حیثیت", "हसियत": "حیثیت", "दिवाने": "دیوانے",
+    "दीवाने": "دیوانے", "दीवाना": "دیوانہ", "दिवाना": "دیوانہ",
+    "खुश": "خوش", "मंजर": "منظر", "मंज़र": "منظر", "इश्क़": "عشق",
+    "ज़िंदगी": "زندگی", "खुशहाल": "خوشحال",
     # फ stands for both /f/ (loanwords) and /pʰ/ (native), and the two take
     # different Urdu letters. The table defaults to پھ, so both are listed.
     "फिर": "پھر", "फूल": "پھول", "फल": "پھل", "फेंक": "پھینک",
@@ -153,6 +164,8 @@ GURU_INITIAL_VOWELS = {
     "ਅ": "ا", "ਆ": "آ", "ਇ": "ا", "ਈ": "ای", "ਉ": "ا", "ਊ": "او",
     "ਏ": "اے", "ਐ": "اے", "ਓ": "او", "ਔ": "او",
 }
+
+GURU_INITIAL_BEFORE_CONSONANT = {"ਏ": "ای", "ਐ": "ای"}
 
 GURU_VOWELS_AFTER_VOWEL = {
     "ਅ": "ا", "ਆ": "ا", "ਇ": "ئ", "ਈ": "ئی", "ਉ": "ؤ", "ਊ": "ؤ",
@@ -242,6 +255,7 @@ SCRIPTS: dict[str, dict[str, Any]] = {
         "block": re.compile(r"[ऀ-ॿ]"),
         "consonants": DEVA_CONSONANTS,
         "vowels": DEVA_INITIAL_VOWELS,
+        "vowels_before_consonant": DEVA_INITIAL_BEFORE_CONSONANT,
         "vowels_after_vowel": DEVA_VOWELS_AFTER_VOWEL,
         "matras": DEVA_MATRAS,
         "short_before_vowel": {"ि": "ی", "ु": "و"},
@@ -260,6 +274,7 @@ SCRIPTS: dict[str, dict[str, Any]] = {
         "block": re.compile(r"[਀-੿]"),
         "consonants": GURU_CONSONANTS,
         "vowels": GURU_INITIAL_VOWELS,
+        "vowels_before_consonant": GURU_INITIAL_BEFORE_CONSONANT,
         "vowels_after_vowel": GURU_VOWELS_AFTER_VOWEL,
         "matras": GURU_MATRAS,
         "short_before_vowel": {"ਿ": "ی", "ੁ": "و"},
@@ -311,6 +326,8 @@ def convert_word(word: str, language: str = "hi") -> str:
 
     block, consonants = script["block"], script["consonants"]
     out: list[str] = []
+    # Where a short vowel was left unwritten, and what it would have been.
+    dropped: list[tuple[int, str]] = []
     i, n = 0, len(word)
     while i < n:
         ch = word[i]
@@ -328,8 +345,12 @@ def convert_word(word: str, language: str = "hi") -> str:
             # Word-initial takes alif; anywhere else the vowel needs a hamza
             # seat, or it merges with the letter before it and the word loses a
             # syllable — गई is گئی, not گی.
-            out.append(script["vowels"][ch] if not out
-                       else script["vowels_after_vowel"][ch])
+            if out:
+                out.append(script["vowels_after_vowel"][ch])
+            elif nxt in consonants and ch in script["vowels_before_consonant"]:
+                out.append(script["vowels_before_consonant"][ch])
+            else:
+                out.append(script["vowels"][ch])
             i += 1
             continue
         if ch in script["matras"]:
@@ -342,6 +363,14 @@ def convert_word(word: str, language: str = "hi") -> str:
             # carries the vowel that follows: हुई is ہوئی, not ہئی.
             if not written and nxt in script["vowels"]:
                 written = script["short_before_vowel"].get(ch, "")
+            # Also before a nasal, which cannot sit straight after its own
+            # consonant: ਜਾਨੁਂ is جانوں, and جانں is not readable as anything.
+            elif not written and nxt in script["nasals"]:
+                written = script["short_before_vowel"].get(ch, "")
+            if not written:
+                # Remember where it went, in case the word turns out to have no
+                # vowel at all — see below.
+                dropped.append((len(out), script["short_before_vowel"].get(ch, "")))
             out.append(written)
             i += 1
             continue
@@ -360,6 +389,14 @@ def convert_word(word: str, language: str = "hi") -> str:
 
         out.append(ch)
         i += 1
+
+    # Urdu leaves short vowels unwritten, which is correct — ਪਾਸੁ really is پاس.
+    # But a word whose only vowel was short is then left as bare consonants, and
+    # ਤੁ came out as the single letter ت, which cannot be read as a word at all.
+    # Writing the short vowel is the lesser evil in exactly that case.
+    if dropped and not any(ch in VOWEL_LETTERS for ch in out):
+        for position, replacement in dropped:
+            out[position] = replacement
 
     # A doubled consonant is one letter: लक्खा is لکھا, not لککھا.
     return re.sub(r"(\S)\1", r"\1", "".join(out))

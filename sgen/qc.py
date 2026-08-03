@@ -12,12 +12,65 @@ at all, independent of whether any individual segment looks fine.
 
 from __future__ import annotations
 
+import math
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Sequence
 
 from .asr import Segment
 from .config import QcConfig
 from .cues import Cue
+
+# Writing systems, for deciding whether a transcript is written in one alphabet.
+#
+# Deliberately not translit.SCRIPT_RANGES: that table answers "which script can I
+# romanize", so it excludes Latin by design and stops at the scripts with a
+# transliteration scheme. This one has to see everything a decode might emit,
+# Latin and Arabic included, because the point is to notice a letter that does
+# not belong.
+_SCRIPTS: tuple[tuple[str, tuple[tuple[int, int], ...]], ...] = (
+    ("Latin", ((0x0041, 0x005A), (0x0061, 0x007A), (0x00C0, 0x024F))),
+    ("Greek", ((0x0370, 0x03FF),)),
+    ("Cyrillic", ((0x0400, 0x052F),)),
+    ("Hebrew", ((0x0590, 0x05FF),)),
+    ("Arabic", ((0x0600, 0x06FF), (0x0750, 0x077F), (0xFB50, 0xFDFF), (0xFE70, 0xFEFF))),
+    ("Devanagari", ((0x0900, 0x097F), (0xA8E0, 0xA8FF))),
+    ("Bengali", ((0x0980, 0x09FF),)),
+    ("Gurmukhi", ((0x0A00, 0x0A7F),)),
+    ("Gujarati", ((0x0A80, 0x0AFF),)),
+    ("Oriya", ((0x0B00, 0x0B7F),)),
+    ("Tamil", ((0x0B80, 0x0BFF),)),
+    ("Telugu", ((0x0C00, 0x0C7F),)),
+    ("Kannada", ((0x0C80, 0x0CFF),)),
+    ("Malayalam", ((0x0D00, 0x0D7F),)),
+    ("Sinhala", ((0x0D80, 0x0DFF),)),
+    ("Thai", ((0x0E00, 0x0E7F),)),
+    ("Japanese", ((0x3040, 0x30FF),)),
+    ("Han", ((0x3400, 0x4DBF), (0x4E00, 0x9FFF))),
+    ("Hangul", ((0x1100, 0x11FF), (0xAC00, 0xD7AF))),
+)
+
+
+def script_of_char(ch: str) -> str | None:
+    """Which writing system a character belongs to, or None if it is neutral.
+
+    Digits, spaces and punctuation are neutral: they appear in every script and
+    say nothing about which one a line is written in.
+    """
+    cp = ord(ch)
+    for name, ranges in _SCRIPTS:
+        if any(lo <= cp <= hi for lo, hi in ranges):
+            return name
+    return None
+
+
+def scripts_in(text: str) -> Counter:
+    """Character counts per writing system."""
+    return Counter(s for s in (script_of_char(c) for c in text) if s)
+
+
+def _word_scripts(word: str) -> set[str]:
+    return {s for s in (script_of_char(c) for c in word) if s}
 
 
 @dataclass
@@ -85,6 +138,76 @@ def _span(items: Sequence) -> float:
     return total + (cur_end - cur_start)
 
 
+def _sample(words: Sequence[str], limit: int = 6) -> str:
+    shown = list(dict.fromkeys(words))[:limit]
+    more = "" if len(set(words)) <= limit else ", …"
+    return ", ".join(f"“{w}”" for w in shown) + more
+
+
+def check_scripts(cues: Sequence[Cue], verdict: Verdict, cfg: QcConfig) -> None:
+    """Flag a transcript that is not written in one alphabet.
+
+    Per-segment gating cannot see this: every metric it has is acoustic, so a
+    decode that emitted an English word in the middle of a Punjabi song, or spelt
+    one letter of a Gurmukhi word in Devanagari, scores perfectly well. Two real
+    cases passed with `suspect: false` and no warnings — one Punjabi file
+    containing “shipped” and “तੇਰੇ”, and one that mixed Gurmukhi, Devanagari and
+    Cyrillic throughout. Both were obvious on sight and invisible to the checks.
+    """
+    words = [w for cue in cues for line in cue.lines for w in line.split() if w.strip()]
+    if not words:
+        return
+
+    # A word spelt in two alphabets at once. No orthography does this, so unlike
+    # the checks below there is no legitimate case to make room for.
+    mixed = [w for w in words if len(_word_scripts(w)) > 1]
+    if mixed:
+        verdict.warnings.append("mixed_script_words")
+        verdict.notes.append(
+            f"{len(mixed)} word(s) are spelt in two alphabets at once: {_sample(mixed)}. "
+            "No language writes a word that way, so this is a decode failure rather "
+            "than unusual spelling."
+        )
+
+    counts = scripts_in(" ".join(words))
+    if not counts:
+        return
+    dominant = counts.most_common(1)[0][0]
+
+    # Whole words in another alphabet. A handful is corruption; a lot is someone
+    # genuinely switching language, which is not this module's business — so this
+    # fires only on the sprinkle.
+    foreign = [
+        w for w in words
+        if (scripts := _word_scripts(w)) and len(scripts) == 1 and dominant not in scripts
+    ]
+    limit = max(1, math.ceil(cfg.max_foreign_word_fraction * len(words)))
+    if foreign and len(foreign) <= limit:
+        verdict.warnings.append("foreign_script_words")
+        verdict.notes.append(
+            f"{len(foreign)} of {len(words)} words are in a different alphabet from "
+            f"the rest of the file: {_sample(foreign)}. A few stray words usually "
+            "means the decoder guessed rather than heard. More than "
+            f"{cfg.max_foreign_word_fraction:.0%} would be treated as genuinely "
+            "mixed speech and not reported."
+        )
+
+    # Two alphabets in quantity, neither of them Latin. Latin is excluded because
+    # it mixes legitimately with everything — Hinglish, brand names, place names.
+    letters = sum(n for s, n in counts.items() if s != "Latin")
+    substantial = sorted(
+        s for s, n in counts.items()
+        if s != "Latin" and letters and n / letters >= 0.02
+    )
+    if len(substantial) > 1:
+        verdict.warnings.append("several_scripts")
+        verdict.notes.append(
+            f"The transcript is written in {len(substantial)} different alphabets "
+            f"({', '.join(substantial)}). One language is written in one of them, so "
+            "the language was probably detected wrongly — pin it and run again."
+        )
+
+
 def evaluate(
     segments: Sequence[Segment],
     cues: Sequence[Cue],
@@ -150,6 +273,9 @@ def evaluate(
             f"Language was detected at only {language_confidence:.0%} confidence. "
             "Pin the language explicitly — a wrong guess produces confident nonsense."
         )
+
+    if cfg.check_scripts:
+        check_scripts(cues, verdict, cfg)
 
     if total and verdict.suppressed_fraction > cfg.max_suppressed_fraction:
         verdict.warnings.append("heavily_gated")

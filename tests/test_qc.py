@@ -259,3 +259,101 @@ def test_songs_allow_a_chorus_to_repeat():
     from sgen.config import Config
 
     assert Config.load("music").gating.max_repeat_of_neighbour > Config().gating.max_repeat_of_neighbour
+
+
+# --------------------------------------------------------------------------- #
+# One alphabet per transcript
+#
+# Every other check here is acoustic, so a decode that put an English word into a
+# Punjabi song, or spelt one letter of a Gurmukhi word in Devanagari, scored
+# perfectly and was written out with suspect: false. Both cases are below.
+# --------------------------------------------------------------------------- #
+
+PUNJABI = "ਤੇਰੇ ਪੀਛੇ ਆ ਗਵਾਚੀ ਨਾਲ ਪਿਆਰ ਕਰਨਾ ਸੋਹਣਾ ਮੁੰਡਿਆ ਵੇ"
+
+
+def _scripts(lines, cfg=None):
+    verdict = qc.Verdict()
+    qc.check_scripts([Cue(start=0, end=1, lines=[l]) for l in lines],
+                     verdict, cfg or QcConfig())
+    return verdict
+
+
+def test_a_clean_transcript_passes():
+    assert not _scripts([PUNJABI] * 4).suspect
+    assert not _scripts(["खैरियत पूछो कभी तो कैफियत पूछो"]).suspect
+    assert not _scripts(["The quick brown fox", "jumped over it"]).suspect
+
+
+def test_a_word_spelt_in_two_alphabets_is_flagged():
+    """The real case: “तੇਰੇ” — one Devanagari letter inside a Gurmukhi word."""
+    verdict = _scripts([PUNJABI, "तੇਰੇ ਪੀਛੇ ਆ ਗਵਾਚੀ"] + [PUNJABI] * 3)
+    assert "mixed_script_words" in verdict.warnings
+    assert "तੇਰੇ" in verdict.notes[0]
+
+
+def test_latin_letters_inside_an_indic_word_are_flagged():
+    """Also real, from the same file: “wzglਾ” and “ਬੀਨਾourtਸੀ”."""
+    assert "mixed_script_words" in _scripts([PUNJABI, "wzglਾ ਬੀਨਾourtਸੀ"]).warnings
+
+
+def test_a_stray_foreign_word_is_flagged():
+    """“shipped”, in the middle of a Punjabi song."""
+    verdict = _scripts(["ਵੇ ਤੁ ਲ shipped ਵੇ ਮੈ ਲਾਚੀ"] + [PUNJABI] * 4)
+    assert "foreign_script_words" in verdict.warnings
+    assert "shipped" in " ".join(verdict.notes)
+
+
+def test_genuine_code_switching_is_not_a_fault():
+    """Hinglish is real speech, not a decode failure. Too many English words to
+    be corruption means it is someone talking that way."""
+    verdict = _scripts([
+        "मैंने phone किया और WhatsApp पे message bheja",
+        "office se ghar aaya फिर मैंने खाना खाया",
+    ])
+    assert "foreign_script_words" not in verdict.warnings
+
+
+def test_the_threshold_is_what_separates_the_two():
+    """Same words, different share of the file — only the sprinkle is reported."""
+    sprinkle = ["one two three"] + [PUNJABI] * 20
+    assert "foreign_script_words" in _scripts(sprinkle).warnings
+    assert "foreign_script_words" not in _scripts(["one two three", PUNJABI]).warnings
+
+
+def test_two_indic_alphabets_in_quantity_are_flagged():
+    """The Khairiyat failure: Gurmukhi and Devanagari throughout, and QC said
+    nothing because every segment looked acoustically fine."""
+    verdict = _scripts([PUNJABI, "खैरियत पूछो कभी तो कैफियत पूछो मेरा दिल"] * 3)
+    assert "several_scripts" in verdict.warnings
+
+
+def test_latin_alongside_an_indic_script_is_not_several_scripts():
+    """Latin mixes legitimately with everything — brand names, place names."""
+    verdict = _scripts(["मैंने WhatsApp पे message bheja aur phone kiya",
+                        "Thomas ne Kreuzberg mein photo liya tha"])
+    assert "several_scripts" not in verdict.warnings
+
+
+def test_the_check_can_be_turned_off():
+    cfg = QcConfig(check_scripts=False)
+    verdict = qc.evaluate([seg(0, 10)], [cue(0, 10, "तੇਰੇ wzglਾ")], 100.0, 1.0, cfg)
+    assert "mixed_script_words" not in verdict.warnings
+
+
+def test_evaluate_wires_the_check_in():
+    """It has to run from evaluate(), not only when called directly."""
+    verdict = qc.evaluate(
+        [seg(0, 90)], [cue(0, 90, "तੇਰੇ ਪੀਛੇ ਆ ਗਵਾਚੀ")], 100.0, 1.0, QcConfig()
+    )
+    assert "mixed_script_words" in verdict.warnings
+    assert verdict.suspect
+
+
+def test_every_script_warning_has_a_note():
+    verdict = _scripts([PUNJABI, "तੇਰੇ wzglਾ shipped"] + [PUNJABI] * 3)
+    assert len(verdict.notes) >= len(verdict.warnings)
+
+
+def test_punctuation_and_digits_are_not_a_script():
+    assert not _scripts(["ਤੇਰੇ 42 ਪੀਛੇ, ਆ — ਗਵਾਚੀ! 3.14"]).suspect

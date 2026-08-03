@@ -297,3 +297,59 @@ def test_an_unknown_script_is_refused_per_file(tmp_path):
         folderconf.set_for_file(
             tmp_path, tmp_path / "song.mp4", {"romanize_script": "nastaliq"}
         )
+
+
+# --------------------------------------------------------------------------- #
+# Short vowels that turn out to be load-bearing
+#
+# Urdu leaves short vowels unwritten, which is correct: ਪਾਸੁ really is پاس. But
+# two cases measured on the Punjabi transcript came out unreadable, because the
+# dropped vowel was the only one the word had.
+# --------------------------------------------------------------------------- #
+
+def test_a_short_vowel_is_still_dropped_when_it_can_be():
+    """The default must not change — this is correct Urdu orthography."""
+    assert urdu.convert("ਪਾਸੁ", "pa") == "پاس"
+    assert urdu.convert("दिल", "hi") == "دل"
+    assert urdu.convert("किताब", "hi") == "کتاب"
+
+
+def test_a_word_is_never_left_without_a_vowel():
+    """ਤੁ came out as the bare letter ت, which is not a readable word."""
+    out = urdu.convert("ਤੁ", "pa")
+    assert out == "تو", out
+    assert len(out) > 1
+
+
+def test_a_nasal_cannot_follow_its_own_consonant():
+    """ਜਾਨੁਂ gave جانں — two nuns, the second a nun-ghunna, unreadable."""
+    assert urdu.convert("ਜਾਨੁਂ", "pa") == "جانوں"
+
+
+def test_the_short_vowel_before_a_full_vowel_still_works():
+    """The pre-existing rule must not be disturbed by the new ones."""
+    assert urdu.convert("हुई", "hi") == "ہوئی"
+
+
+# --------------------------------------------------------------------------- #
+# Word-initial e/ai
+# --------------------------------------------------------------------------- #
+
+def test_initial_e_before_a_consonant_uses_ye():
+    """एक came out "اےک", which is not a word. It is ایک."""
+    assert urdu.convert("एक", "hi") == "ایک"
+    assert urdu.convert("ऐसा", "hi") == "ایسا"
+    assert urdu.convert("ਏਕ", "pa") == "ایک"
+    assert urdu.convert("ਐਸਾ", "pa") == "ایسا"
+
+
+def test_a_vowel_standing_alone_keeps_bari_ye():
+    """اے on its own is the vocative, so the bare vowel must not change."""
+    assert urdu.convert("ए", "hi") == "اے"
+
+
+def test_loanwords_measured_wrong_are_now_spelled_by_etymology():
+    """Devanagari does not record which Arabic letter a loanword used, so these
+    can only come from the word list."""
+    assert urdu.convert("हैसियत", "hi") == "حیثیت"
+    assert urdu.convert("दिवाने", "hi") == "دیوانے"
