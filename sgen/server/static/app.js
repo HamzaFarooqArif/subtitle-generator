@@ -148,9 +148,10 @@ const HELP = {
     "Pinning one — use only when the whole file is that language and detection keeps getting it wrong. Pinning German on an English/German recording dropped the English half: 54% of the audio covered instead of 84%.",
   ],
   "opt-hotwords": [
-    "Names the model has no way to guess, given to it before it decodes.",
+    "Words the model has no way to guess, given to it before it decodes.",
     "People, places, pets, in-jokes — comma-separated. e.g. “Thomas, Oaxaca, Kreuzberg”.",
     "The cheapest accuracy win available: without it, an unusual name becomes whichever common word sounds nearest.",
+    "For a song, paste the words of the lyrics here. It is the only context that reaches every part of a sung file, and it fixes exactly the sound-alike wrong word: “चीन लूँगा” (China) became “छीन लूँगा” (snatch). Unusual words first — only the first ~223 tokens are used, and the job says so if the list is longer.",
   ],
   "opt-romanize": [
     "A second subtitle file with the same words in a different alphabet.",

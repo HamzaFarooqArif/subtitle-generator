@@ -457,6 +457,9 @@ class Pipeline:
         if retried:
             verdict.notes.insert(0, "Voice activity detection rejected nearly the "
                                     "whole file, so it was decoded again with VAD off.")
+        truncated = self.recognizer.hotwords_note()
+        if truncated:
+            verdict.notes.append(truncated)
         for note in verdict.notes:
             log.warning("qc: %s", note)
 

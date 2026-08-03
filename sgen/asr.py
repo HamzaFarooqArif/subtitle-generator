@@ -130,6 +130,31 @@ class Recognizer:
         except ImportError:
             pass
 
+    def hotwords_note(self) -> str | None:
+        """Say so when the hotword list is longer than the decoder will use.
+
+        Hotwords are the only context that reaches every 30-second window when
+        `condition_on_previous_text` is off, which makes them the lever for songs:
+        given the words a song actually uses, "चीन लूँगा" ("China") decodes as
+        "छीन लूँगा" ("snatch"). That invites pasting a whole lyric sheet — and
+        faster-whisper silently keeps only the first half-context worth of it, so
+        without this the tail of the paste appears to be in effect when it is not.
+        """
+        text = (self.cfg.hotwords or "").strip()
+        if not text or self._model is None:
+            return None
+        # The same budget faster-whisper's get_prompt() applies.
+        budget = self._model.max_length // 2 - 1
+        tokens = len(self._model.hf_tokenizer.encode(" " + text, add_special_tokens=False).ids)
+        if tokens <= budget:
+            return None
+        return (
+            f"The hotword list is {tokens} tokens long and the decoder uses only "
+            f"the first {budget}, so about {100 - 100 * budget // tokens}% of it had "
+            "no effect. Put the unusual words first — those are the ones it cannot "
+            "guess."
+        )
+
     def _kwargs(self, language: str | None, task: str = "transcribe") -> dict[str, Any]:
         cfg = self.cfg
         return {
