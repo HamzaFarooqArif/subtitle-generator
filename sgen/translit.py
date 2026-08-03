@@ -15,6 +15,11 @@ Why the output needs post-processing rather than a library scheme straight:
   ITRANS is the base and its capital-letter long vowels are mapped down here.
 * फ is /f/ in Hindi, so ITRANS "ph" reads better as "f" ("kaifiyat", not
   "kaiphiyata").
+* Nobody handles the nukta, the dot that turns ਸ (s) into ਸ਼ (sh) and ਜ (j) into
+  ਜ਼ (z). sanscript drops it for Gurmukhi entirely and names the Devanagari ones
+  with capitals that clash with the long-vowel rules, so ਸ਼ਾਮ came out "saam" and
+  ख़ास came out "kaas". See the nukta section below: a word spelled with the
+  letter next door still reads as a word, which is why it went unnoticed.
 
 Rules are applied per token, and only to tokens actually containing the source
 script, so English words mixed into Hinglish text pass through untouched — a
@@ -24,6 +29,7 @@ blanket ph->f would otherwise turn "phone" into "fone".
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Callable
 
 # Unicode block ranges per script we can romanize.
@@ -92,6 +98,13 @@ _ITRANS_MAP: list[tuple[str, str]] = [
     ("Ch", "chh"),          # छ -> chh, keeping च as ch
     ("Sh", "sh"), ("shh", "sh"),
     ("~n", "n"), ("~N", "n"), ("NG", "ng"),
+    # Nukta letters, which ITRANS spells with capitals or a leading dot that mean
+    # something else in this table: ख़ is "K", ग़ is "G", ड़ is ".D", ढ़ is ".Dh".
+    # Left alone, ख़ास came out "kaas" — the aspiration silently gone — and बड़ा
+    # came out "ba.da", with the dot still in it. Spelled here the way a Hindi
+    # speaker writes them ("bada", "padhna"), not the linguist's "bara"/"parhna".
+    # Must follow "NG" so that ङ is not turned into "Ngh".
+    (".Dh", "dh"), (".D", "d"), ("K", "kh"), ("G", "gh"),
     ("A", "aa"),            # long vowels: ITRANS capitalizes them
     ("I", "i"), ("U", "u"),
     ("E", "e"), ("O", "o"),
@@ -119,8 +132,83 @@ _CONVENTIONAL = {
 
 _VOWELS = set("aeiou")
 
+# --------------------------------------------------------------------------- #
+# The nukta
+#
+# A nukta is the dot written under a consonant to borrow a sound the script has
+# no letter for — Gurmukhi ਸ (s) becomes ਸ਼ (sh), ਜ (j) becomes ਜ਼ (z). sanscript's
+# Gurmukhi scheme has no rule for it at all: it transliterates the *base* letter
+# and leaves the dot sitting in the output, so ਸ਼ਾਮ became "sa਼aam" and ਜ਼ਿੰਦਗੀ
+# became "ja਼indagi". Read past the stray mark, those say "saam" and "jindagi" —
+# the letter next door to the right one. A wrong letter that sounds almost right
+# is the worst kind of error here, because nothing looks broken.
+#
+# The dot arrives *after* the base letter's inherent vowel ("sa਼"), while an
+# explicit vowel sign arrives after the dot ("sa਼A" for ਸ਼ਾ). Only one of the two
+# vowels is real, so the inherent one is kept only when nothing follows it —
+# otherwise ਜ਼ਿੰਦਗੀ reads "zaindagi" and ਫ਼ੌਜ reads "faauj".
+# --------------------------------------------------------------------------- #
+
+# Written as codepoints on purpose: the two nuktas are indistinguishable on
+# screen, so a literal here would be unreviewable.
+_NUKTA_MARK = chr(0x093C)       # Devanagari
+_GURMUKHI_NUKTA = chr(0x0A3C)   # folded onto the Devanagari one before matching
+
+# ITRANS spelling of the base syllable -> the consonant it really is.
+_NUKTA: list[tuple[str, str]] = [
+    ("kha", "kh"),   # ਖ਼
+    ("pha", "f"),    # ਫ਼
+    ("sa", "sh"),    # ਸ਼
+    ("ja", "z"),     # ਜ਼
+    ("ga", "gh"),    # ਗ਼
+    ("la", "l"),     # ਲ਼
+    ("na", "n"),     # ऩ
+    ("ya", "y"),     # य़
+    ("ra", "r"),     # ऱ
+]
+
+# ITRANS writes long vowels with capitals, so both cases count.
+_ITRANS_VOWELS = set("aAiIuUeEoO")
+
+_NUKTA_RE = re.compile(
+    "(" + "|".join(src for src, _ in _NUKTA) + ")" + _NUKTA_MARK
+)
+_NUKTA_LATIN = dict(_NUKTA)
+
+# Codepoints that are a base letter plus a nukta rolled into one. Decomposing
+# them first means the rules above see every spelling of the same letter, however
+# the transcript happened to encode it. Only these are touched — a blanket NFD
+# would also take apart Bengali and Oriya vowel signs, which transliterate fine.
+_PRECOMPOSED = {
+    cp: unicodedata.normalize("NFD", chr(cp))
+    for cp in (
+        0x0929, 0x0931, 0x0934, *range(0x0958, 0x0960),   # Devanagari
+        0x0A33, 0x0A36, 0x0A59, 0x0A5A, 0x0A5B, 0x0A5E,   # Gurmukhi
+    )
+    if unicodedata.normalize("NFD", chr(cp)) != chr(cp)
+}
+
+
+def _decompose_nukta(text: str) -> str:
+    return text.translate(_PRECOMPOSED)
+
+
+def _nukta_letter(match: re.Match[str]) -> str:
+    latin = _NUKTA_LATIN[match.group(1)]
+    following = match.string[match.end():match.end() + 1]
+    return latin if following in _ITRANS_VOWELS else latin + "a"
+
+
+def _fold_nukta(token: str) -> str:
+    token = token.replace(_GURMUKHI_NUKTA, _NUKTA_MARK)
+    token = _NUKTA_RE.sub(_nukta_letter, token)
+    # Any nukta letter not listed above: keep the base letter rather than leave a
+    # mark from the source script sitting in text that is supposed to be Latin.
+    return token.replace(_NUKTA_MARK, "")
+
 
 def _apply_itrans_map(token: str) -> str:
+    token = _fold_nukta(token)
     for src, dst in _ITRANS_MAP:
         token = token.replace(src, dst)
     return token
@@ -310,7 +398,7 @@ def romanize(text: str, language: str | None = None) -> str:
         if not part or part.isspace() or not _has_script(part, script):
             out.append(part)
             continue
-        word = _apply_itrans_map(convert(part))
+        word = _apply_itrans_map(convert(_decompose_nukta(part)))
         if schwa:
             word = _delete_final_schwa(word)
             word = _hindi_polish(word)

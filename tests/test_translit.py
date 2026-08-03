@@ -125,6 +125,72 @@ def test_conventional_spellings_applied():
 
 
 # --------------------------------------------------------------------------- #
+# Nukta letters
+#
+# The dot under a consonant that borrows a sound the script has no letter for.
+# Getting it wrong does not produce obvious garbage — it produces a real word
+# spelled with the letter next door, which reads as plausible and is therefore
+# the error most likely to go unnoticed.
+# --------------------------------------------------------------------------- #
+
+# (source, language, must appear, must NOT appear, why)
+NUKTA_CASES = [
+    ("ਸ਼ਾਮ", "pa", "shaam", "saam", "ਸ਼ is sh, not s"),
+    ("ਜ਼ਿੰਦਗੀ", "pa", "zindagi", "jindagi", "ਜ਼ is z, not j"),
+    ("ਖ਼ਾਸ", "pa", "khaas", "kaas", "ਖ਼ keeps its aspiration"),
+    ("ਫ਼ੌਜ", "pa", "fauj", "phauj", "ਫ਼ is f"),
+    ("ਗ਼ਜ਼ਲ", "pa", "ghazal", "gazal", "two nuktas in one word"),
+    ("ਵੜਿਆ", "pa", "vadia", ".d", "ੜ is a letter, not a dot"),
+    ("ख़ास", "hi", "khaas", "kaas", "ख़ keeps its aspiration"),
+    ("ग़ज़ल", "hi", "ghazal", "gazal", "ग़ is gh, ज़ is z"),
+    ("बड़ा", "hi", "bada", ".d", "ड़ is a letter, not a dot"),
+    ("पढ़ना", "hi", "padh", ".dh", "ढ़ is a letter, not a dot"),
+    ("छोड़ूंगा", "hi", "chhodunga", ".", "the dot never reaches the reader"),
+    ("इश्क़", "hi", "ishq", "ishk", "क़ is q"),
+    ("मंज़र", "hi", "manzar", "manjar", "ज़ is z, not j"),
+]
+
+
+@pytest.mark.parametrize("text,lang,wanted,unwanted,why", NUKTA_CASES)
+def test_nukta_letters_keep_their_own_sound(text, lang, wanted, unwanted, why):
+    out = translit.romanize(text, lang).lower()
+    assert wanted in out, f"{why}: {text} -> {out!r}"
+    assert unwanted not in out, f"{why}: {text} -> {out!r}"
+
+
+@pytest.mark.parametrize("text,lang", [(c[0], c[1]) for c in NUKTA_CASES])
+def test_no_nukta_survives_into_latin_text(text, lang):
+    """A mark from the source script in supposedly-Latin output is a bug.
+
+    sanscript's Gurmukhi scheme has no rule for the nukta, so it used to leave
+    the raw combining character in the result: ਸ਼ਾਮ came out "Sa਼aam".
+    """
+    out = translit.romanize(text, lang)
+    assert out.isascii(), out
+
+
+def test_precomposed_and_decomposed_nuktas_agree():
+    """The same letter encoded two ways must romanize the same way.
+
+    ज़ is either one codepoint or ज followed by a combining nukta, and a
+    transcript can contain either.
+    """
+    import unicodedata
+
+    for text, lang in (("ज़िंदगी", "hi"), ("ख़ास", "hi"), ("ਜ਼ਿੰਦਗੀ", "pa")):
+        composed = unicodedata.normalize("NFC", text)
+        decomposed = unicodedata.normalize("NFD", text)
+        assert translit.romanize(composed, lang) == translit.romanize(decomposed, lang)
+
+
+def test_a_nukta_does_not_change_its_neighbours():
+    """The fix must not reach beyond the letter carrying the dot."""
+    # ङ (ITRANS "~N"/"NG") shares a letter with the ग़ rule; ਸ next to ਸ਼ must stay s.
+    assert translit.romanize("ਸਾਸ ਸ਼ਾਮ", "pa").lower() == "saas shaam"
+    assert "ng" in translit.romanize("रंग", "hi").lower()
+
+
+# --------------------------------------------------------------------------- #
 # Cyrillic
 #
 # The scheme is BGN/PCGN for the East Slavic languages — the one an English
