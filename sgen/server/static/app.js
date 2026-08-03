@@ -1605,10 +1605,15 @@ $("#btn-submit").addEventListener("click", async () => {
   }
 });
 
+// A job that will not change again. Declared here because the handler below is
+// the first thing to need it; JOB_ORDER, which sorts by the same statuses, sits
+// with renderJobs.
+const FINISHED = ["done", "failed", "cancelled"];
+
 $("#btn-clear-jobs").addEventListener("click", async () => {
   await api("/api/jobs/clear", { method: "POST" });
   for (const [id, job] of state.jobs) {
-    if (["done", "failed", "cancelled"].includes(job.status)) state.jobs.delete(id);
+    if (FINISHED.includes(job.status)) state.jobs.delete(id);
   }
   renderJobs();
 });
@@ -1683,10 +1688,18 @@ function renderJobs() {
   }
   // Stable within each group, so nothing shuffles under the cursor: only the
   // three bands move, and a job moves once, when its status changes.
+  //
+  // The server appends jobs in submission order, so this index is oldest-first.
+  // Finished jobs are shown newest-first, because the one that just finished is
+  // the one being looked at, and it would otherwise arrive at the bottom of a
+  // long list. The queue keeps submission order — that is the order it will be
+  // worked in, so reversing it would be a lie.
   const order = new Map(jobs.map((job, i) => [job.id, i]));
   jobs.sort((a, b) =>
     (JOB_ORDER[a.status] ?? 3) - (JOB_ORDER[b.status] ?? 3)
-    || order.get(a.id) - order.get(b.id));
+    || (FINISHED.includes(a.status)
+        ? order.get(b.id) - order.get(a.id)
+        : order.get(a.id) - order.get(b.id)));
 
   const busy = jobs.some((j) => ["queued", "running", "paused"].includes(j.status));
   $("#btn-pause").classList.toggle("hidden", !busy && !state.paused);

@@ -970,3 +970,30 @@ def test_the_page_offers_to_stop_and_to_pause(client):
     js = client.get("/static/app.js").text
     assert '"queued", "running", "paused"' in js, "Stop must apply to a running job"
     assert "/api/queue/pause" in js
+
+
+def test_finished_files_are_listed_newest_first(client):
+    """The file that just finished is the one being looked at.
+
+    Oldest-first put it at the bottom of a long list, out of view. The queue is
+    deliberately not reversed: that band is shown in the order it will be worked.
+    """
+    js = client.get("/static/app.js").text
+    body = js.split("jobs.sort(", 1)[1].split(";", 1)[0]
+    assert "FINISHED.includes(a.status)" in body, "finished jobs need their own direction"
+    assert "order.get(b.id) - order.get(a.id)" in body, "finished must sort descending"
+    assert "order.get(a.id) - order.get(b.id)" in body, "the queue must stay ascending"
+
+
+def test_the_job_sort_puts_work_in_progress_on_top(client):
+    """Whatever the order within a band, running must outrank queued and done."""
+    js = client.get("/static/app.js").text
+    line = next(l for l in js.splitlines() if l.startswith("const JOB_ORDER"))
+    order = {
+        k.strip().strip('"'): int(v)
+        for k, v in (p.split(":") for p in line.split("{")[1].split("}")[0].split(","))
+    }
+    assert order["running"] < order["queued"] < order["done"]
+    assert order["paused"] == order["running"], "a paused job is still the current one"
+    for status in ("done", "failed", "cancelled"):
+        assert order[status] == order["done"], f"{status} belongs in the finished band"
