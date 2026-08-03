@@ -45,7 +45,8 @@ keyboard, or click to pin it. A control with no help text fails the test suite.
 
 **Subtitles** — browse to your files, set the profile / language / hotwords, and
 submit. Jobs run one at a time on a single GPU worker (the model loads once and
-stays loaded between jobs), with live per-stage progress streamed over SSE.
+stays loaded between jobs), with live per-stage progress streamed over SSE. The
+file being processed is listed first, then what is waiting, then what is done.
 Finished files, and everything transcribed in earlier sessions, are listed
 underneath with a **Translate…** button.
 

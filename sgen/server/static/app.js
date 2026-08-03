@@ -1662,12 +1662,23 @@ const STAGE_LABELS = {
   write: "Writing subtitles", done: "Done",
 };
 
+// The file being worked on, then what is waiting, then what is finished. With a
+// queue of fifty the one thing you want to watch was somewhere in the middle,
+// and it moved every time another file finished.
+const JOB_ORDER = { running: 0, queued: 1, done: 2, failed: 2, cancelled: 2 };
+
 function renderJobs() {
   const jobs = Array.from(state.jobs.values());
   if (!jobs.length) {
     $("#jobs").innerHTML = "";
     return;
   }
+  // Stable within each group, so nothing shuffles under the cursor: only the
+  // three bands move, and a job moves once, when its status changes.
+  const order = new Map(jobs.map((job, i) => [job.id, i]));
+  jobs.sort((a, b) =>
+    (JOB_ORDER[a.status] ?? 3) - (JOB_ORDER[b.status] ?? 3)
+    || order.get(a.id) - order.get(b.id));
 
   $("#jobs").innerHTML = jobs.map((job) => {
     const pct = Math.round((job.progress || 0) * 100);
