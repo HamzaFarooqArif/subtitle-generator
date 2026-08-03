@@ -63,6 +63,14 @@ LANGUAGE_SCRIPTS: dict[str, str] = {
     "bg": "Cyrillic", "sr": "Cyrillic", "mk": "Cyrillic",
 }
 
+# Scripts we can name but cannot actually transliterate: indic-transliteration
+# ships no Sinhala scheme. Listed rather than silently absent because
+# `supported()` used to say yes for "si" and then the write raised
+# TransliterationUnavailable, failing a job whose transcription had succeeded.
+# An unsupported language is meant to produce the explanatory note in
+# write_second_script, not an exception.
+_NO_SCHEME = {"Sinhala"}
+
 # Languages whose romanization benefits from Hindi-style schwa deletion.
 _SCHWA_DELETING = {"hi", "mr", "ne", "pa", "gu", "bn"}
 
@@ -149,22 +157,33 @@ _VOWELS = set("aeiou")
 # otherwise ਜ਼ਿੰਦਗੀ reads "zaindagi" and ਫ਼ੌਜ reads "faauj".
 # --------------------------------------------------------------------------- #
 
-# Written as codepoints on purpose: the two nuktas are indistinguishable on
-# screen, so a literal here would be unreviewable.
-_NUKTA_MARK = chr(0x093C)       # Devanagari
-_GURMUKHI_NUKTA = chr(0x0A3C)   # folded onto the Devanagari one before matching
+# Written as codepoints on purpose: the nuktas of the different scripts are
+# indistinguishable on screen, so literals here would be unreviewable.
+_NUKTA_MARK = chr(0x093C)       # Devanagari, the form everything folds onto
+_OTHER_NUKTAS = {
+    chr(0x09BC): _NUKTA_MARK,   # Bengali    ়
+    chr(0x0A3C): _NUKTA_MARK,   # Gurmukhi   ਼
+    chr(0x0ABC): _NUKTA_MARK,   # Gujarati   ઼
+    chr(0x0B3C): _NUKTA_MARK,   # Oriya      ଼
+    chr(0x0CBC): _NUKTA_MARK,   # Kannada    ಼
+}
 
-# ITRANS spelling of the base syllable -> the consonant it really is.
+# ITRANS spelling of the base syllable -> the consonant it really is. Shared by
+# every script, because sanscript emits ITRANS whatever it read.
 _NUKTA: list[tuple[str, str]] = [
-    ("kha", "kh"),   # ਖ਼
-    ("pha", "f"),    # ਫ਼
-    ("sa", "sh"),    # ਸ਼
-    ("ja", "z"),     # ਜ਼
-    ("ga", "gh"),    # ਗ਼
-    ("la", "l"),     # ਲ਼
+    ("kha", "kh"),   # ख़ ਖ਼
+    ("pha", "f"),    # फ़ ਫ਼
+    ("Dha", "dh"),   # ढ़ ঢ় ଢ଼  -- retroflex, capital D in ITRANS
+    ("Da", "d"),     # ड़ ড় ଡ଼
+    ("sa", "sh"),    # ਸ਼
+    ("ja", "z"),     # ज़ ਜ਼
+    ("ga", "gh"),    # ग़ ਗ਼
+    ("la", "l"),     # ਲ਼
     ("na", "n"),     # ऩ
-    ("ya", "y"),     # य़
+    ("Ya", "y"),     # য় ୟ  -- Bengali/Oriya spell this one with capital Y
+    ("ya", "y"),     # य़
     ("ra", "r"),     # ऱ
+    ("Va", "v"),     # র with a nukta
 ]
 
 # ITRANS writes long vowels with capitals, so both cases count.
@@ -177,16 +196,20 @@ _NUKTA_LATIN = dict(_NUKTA)
 
 # Codepoints that are a base letter plus a nukta rolled into one. Decomposing
 # them first means the rules above see every spelling of the same letter, however
-# the transcript happened to encode it. Only these are touched — a blanket NFD
+# the transcript happened to encode it. Only these are touched -- a blanket NFD
 # would also take apart Bengali and Oriya vowel signs, which transliterate fine.
 _PRECOMPOSED = {
     cp: unicodedata.normalize("NFD", chr(cp))
     for cp in (
         0x0929, 0x0931, 0x0934, *range(0x0958, 0x0960),   # Devanagari
+        0x09DC, 0x09DD, 0x09DF,                           # Bengali
         0x0A33, 0x0A36, 0x0A59, 0x0A5A, 0x0A5B, 0x0A5E,   # Gurmukhi
+        0x0B5C, 0x0B5D, 0x0B5F,                           # Oriya
     )
     if unicodedata.normalize("NFD", chr(cp)) != chr(cp)
 }
+
+_NUKTA_TRANSLATE = {ord(k): v for k, v in _OTHER_NUKTAS.items()}
 
 
 def _decompose_nukta(text: str) -> str:
@@ -200,7 +223,7 @@ def _nukta_letter(match: re.Match[str]) -> str:
 
 
 def _fold_nukta(token: str) -> str:
-    token = token.replace(_GURMUKHI_NUKTA, _NUKTA_MARK)
+    token = token.translate(_NUKTA_TRANSLATE)
     token = _NUKTA_RE.sub(_nukta_letter, token)
     # Any nukta letter not listed above: keep the base letter rather than leave a
     # mark from the source script sitting in text that is supposed to be Latin.
@@ -378,6 +401,11 @@ def romanize(text: str, language: str | None = None) -> str:
     script = LANGUAGE_SCRIPTS.get((language or "").lower()) or script_of(text)
     if script is None or script not in SCRIPT_RANGES:
         return text
+    if script in _NO_SCHEME:
+        raise TransliterationUnavailable(
+            f"{script} text cannot be romanized: indic-transliteration has no "
+            f"scheme for it. supported() reports this, so callers can skip it."
+        )
 
     if script == "Cyrillic":
         # Russian unless told otherwise: it is the language most Cyrillic text
@@ -410,8 +438,13 @@ def romanize(text: str, language: str | None = None) -> str:
 
 
 def supported(language: str | None) -> bool:
-    """Whether romanization is available for this language."""
-    return (language or "").lower() in LANGUAGE_SCRIPTS
+    """Whether romanization is available for this language.
+
+    Must agree with what `romanize` can actually do: saying yes to a script with
+    no scheme behind it turned a successful transcription into a failed job.
+    """
+    script = LANGUAGE_SCRIPTS.get((language or "").lower())
+    return script is not None and script not in _NO_SCHEME
 
 
 def romanize_lines(lines: list[str], language: str | None = None) -> list[str]:

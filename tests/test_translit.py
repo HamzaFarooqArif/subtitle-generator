@@ -183,6 +183,75 @@ def test_precomposed_and_decomposed_nuktas_agree():
         assert translit.romanize(composed, lang) == translit.romanize(decomposed, lang)
 
 
+# Bengali and Oriya carry the nukta too, and had the identical bug: their dot is
+# a different codepoint, so the Devanagari/Gurmukhi fix did not reach them.
+OTHER_SCRIPT_NUKTA = [
+    ("বড়", "bn", "bengali ড়"),
+    ("পড়া", "bn", "bengali ড় mid-word"),
+    ("য়", "bn", "bengali য়"),
+    ("ବଡ଼", "or", "oriya ଡ଼"),
+    ("ପଢ଼", "or", "oriya ଢ଼"),
+    ("બડ઼ો", "gu", "gujarati nukta"),
+]
+
+
+@pytest.mark.parametrize("text,lang,why", OTHER_SCRIPT_NUKTA)
+def test_every_script_with_a_nukta_is_handled(text, lang, why):
+    out = translit.romanize(text, lang)
+    assert out.isascii(), f"{why}: {text} -> {out!r}"
+    assert "." not in out, f"{why}: {text} -> {out!r}"
+
+
+@pytest.mark.parametrize("text,lang,why", OTHER_SCRIPT_NUKTA)
+def test_other_scripts_agree_across_encodings(text, lang, why):
+    import unicodedata
+
+    assert translit.romanize(unicodedata.normalize("NFC", text), lang) == (
+        translit.romanize(unicodedata.normalize("NFD", text), lang)
+    ), why
+
+
+def test_bengali_retroflex_flap_is_a_letter():
+    """ড় is a letter in its own right, not ড plus a leftover mark."""
+    assert translit.romanize("পড়া", "bn").lower().startswith("pad")
+
+
+# --------------------------------------------------------------------------- #
+# Scripts with no scheme behind them
+# --------------------------------------------------------------------------- #
+
+def test_sinhala_is_reported_unsupported_rather_than_crashing():
+    """supported() said yes for Sinhala and then the write raised.
+
+    That failed the whole job after transcription had already succeeded. An
+    unsupported language is meant to produce an explanatory note instead.
+    """
+    assert not translit.supported("si")
+
+
+def test_romanize_still_refuses_sinhala_loudly():
+    """Callers that skip the supported() check should get an error, not silence."""
+    with pytest.raises(translit.TransliterationUnavailable):
+        translit.romanize("ආයුබෝවන්", "si")
+
+
+def test_supported_matches_what_romanize_can_do():
+    """Every language supported() claims must have a working scheme behind it.
+
+    This is the check that would have caught Sinhala: the language table listed
+    it, so supported() said yes, but no scheme existed to convert it.
+    """
+    missing = []
+    for language, script in translit.LANGUAGE_SCRIPTS.items():
+        if not translit.supported(language) or script == "Cyrillic":
+            continue  # Cyrillic is a local table, not a sanscript scheme
+        try:
+            translit._transliterator(script)
+        except translit.TransliterationUnavailable:
+            missing.append((language, script))
+    assert not missing, f"supported() lies about: {missing}"
+
+
 def test_a_nukta_does_not_change_its_neighbours():
     """The fix must not reach beyond the letter carrying the dot."""
     # ङ (ITRANS "~N"/"NG") shares a letter with the ग़ rule; ਸ next to ਸ਼ must stay s.
