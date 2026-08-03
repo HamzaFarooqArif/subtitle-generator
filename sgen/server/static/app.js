@@ -1499,6 +1499,10 @@ function renderSelection() {
     .map(([path, meta]) =>
       `<li>${escapeHtml(meta.name)}<button data-drop="${encodeURIComponent(path)}">×</button></li>`)
     .join("");
+  // Only shown when it says something. "Selected 0" with a Clear button beside a
+  // scan full of tick boxes reads as a second, contradictory count — and while a
+  // scan is up it can only ever be 0, because the two are exclusive.
+  $("#selection").classList.toggle("hidden", count === 0);
   updateSubmitButton();
 }
 
