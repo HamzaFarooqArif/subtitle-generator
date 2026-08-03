@@ -70,6 +70,10 @@ qc:
   max_suppressed_fraction: 0.75
 
 cues:
+  # The segments are the sung lines. Repacking them into 42-character cues
+  # straddles those lines, which is why a chorus repeated three times reads as
+  # one long run of text instead of three identical subtitles.
+  respect_segment_boundaries: true
   max_lines: 2
   max_chars_per_line: 42
   # Sung lines are slower than speech and want longer on screen.

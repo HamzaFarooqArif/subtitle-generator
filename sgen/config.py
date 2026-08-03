@@ -155,6 +155,14 @@ class CueConfig:
     # especially) otherwise strands cues reading one word.
     merge_short_cues: bool = True
     min_cue_chars: int = 12
+    # Never let a cue span two ASR segments.
+    #
+    # For speech, off is right: a sentence split across two decode windows should
+    # read as one subtitle. For a song it is wrong, because the segments *are* the
+    # sung lines — repacking them to 42 characters straddles the lines, so a
+    # chorus repeated three times is still all there but no longer looks like
+    # three identical subtitles.
+    respect_segment_boundaries: bool = False
 
 
 @dataclass

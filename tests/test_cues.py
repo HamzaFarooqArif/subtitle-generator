@@ -159,3 +159,86 @@ def test_long_sentence_with_contraction_stays_within_two_lines():
     assert len(cues) == 1
     assert len(cues[0].lines) == 2, cues[0].lines
     assert "overlong" not in cues[0].warnings
+
+
+# --------------------------------------------------------------------------- #
+# lyrics: the segments are the lines
+#
+# Cue building normally flattens every segment into one word stream and repacks
+# it, which is right for speech — a sentence split across two decode windows
+# should read as one subtitle. For a song it destroys the structure: the segments
+# *are* the sung lines, so repacking to 42 characters straddles them and a chorus
+# repeated three times stops looking like three identical subtitles.
+# --------------------------------------------------------------------------- #
+
+def _sung(*lines):
+    """One segment per sung line, two seconds each, no punctuation — lyrics."""
+    from sgen.asr import Segment, Word
+
+    out = []
+    for i, text in enumerate(lines):
+        start, end = i * 2.0, i * 2.0 + 1.8
+        words = text.split()
+        step = (end - start) / max(1, len(words))
+        out.append(Segment(
+            start=start, end=end, text=text,
+            words=[Word(start + n * step, start + (n + 1) * step, " " + w, 0.9)
+                   for n, w in enumerate(words)],
+        ))
+    return out
+
+
+def test_a_repeated_line_stays_repeated():
+    from sgen.config import CueConfig
+    from sgen.cues import build
+
+    hook = "ve tu long ve laachi"
+    segments = _sung(hook, hook, hook)
+
+    cfg = CueConfig(respect_segment_boundaries=True)
+    cues = build(segments, cfg)
+    assert [c.text for c in cues] == [hook, hook, hook]
+
+
+def test_without_the_option_the_same_lines_run_together():
+    """The behaviour that made a three-times chorus look like one line."""
+    from sgen.config import CueConfig
+    from sgen.cues import build
+
+    hook = "ve tu long ve laachi"
+    cues = build(_sung(hook, hook, hook), CueConfig())
+    assert [c.text for c in cues] != [hook, hook, hook]
+    assert len(cues) < 3
+
+
+def test_no_words_are_lost_either_way():
+    """Whatever the packing, the text has to survive intact."""
+    from sgen.config import CueConfig
+    from sgen.cues import build
+
+    segments = _sung("first line here", "second line here", "third line here")
+    packed = " ".join(c.text for c in build(segments, CueConfig())).split()
+    per_line = " ".join(
+        c.text for c in build(segments, CueConfig(respect_segment_boundaries=True))
+    ).split()
+    assert sorted(packed) == sorted(per_line)
+
+
+def test_a_long_segment_still_splits_into_readable_cues():
+    """Respecting boundaries must not mean 90-character subtitles."""
+    from sgen.config import CueConfig
+    from sgen.cues import build
+
+    long_line = " ".join(["word"] * 30)
+    cues = build(_sung(long_line), CueConfig(respect_segment_boundaries=True))
+    assert len(cues) > 1
+    for cue in cues:
+        for line in cue.lines:
+            assert len(line) <= CueConfig().max_chars_per_line + 1, line
+
+
+def test_songs_use_it_and_speech_does_not():
+    from sgen.config import Config
+
+    assert Config.load("music").cues.respect_segment_boundaries is True
+    assert Config.load("home-video").cues.respect_segment_boundaries is False

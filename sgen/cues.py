@@ -368,6 +368,16 @@ def _apply_timing(cues: list[Cue], cfg: CueConfig) -> None:
             cue.warnings.append(f"cps_{cue.cps:.0f}")
 
 
+def _chunks_for(words: Sequence[Word], cfg: CueConfig) -> list[list[Word]]:
+    """Sentence-split, pack to the line limits, then fold single-word runts in."""
+    if not words:
+        return []
+    chunks: list[list[Word]] = []
+    for sentence in _sentences(list(words), cfg):
+        chunks.extend(c for c in _pack(sentence, cfg) if c)
+    return _merge_runts(chunks, cfg)
+
+
 def build(
     segments: Sequence[Segment],
     cfg: CueConfig,
@@ -380,14 +390,19 @@ def build(
     review what the gate removed rather than trusting it blindly.
     """
     usable = segments if include_suppressed else [s for s in segments if not s.suppressed]
-    words = _words_from(usable)
-    if not words:
+    if not _words_from(usable):
         return []
 
-    chunks: list[list[Word]] = []
-    for sentence in _sentences(words, cfg):
-        chunks.extend(c for c in _pack(sentence, cfg) if c)
-    chunks = _merge_runts(chunks, cfg)
+    if cfg.respect_segment_boundaries:
+        # Sung lines are the units. Flattening everything into one word stream and
+        # re-packing to 42 characters straddles them, so a chorus repeated three
+        # times survives as text but stops looking like three identical lines —
+        # which is the whole point of subtitling a song.
+        chunks: list[list[Word]] = []
+        for segment in usable:
+            chunks.extend(_chunks_for(_words_from([segment]), cfg))
+    else:
+        chunks = _chunks_for(_words_from(usable), cfg)
 
     cues: list[Cue] = []
     for chunk in chunks:
