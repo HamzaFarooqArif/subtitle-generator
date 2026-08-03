@@ -12,6 +12,7 @@ const state = {
   scan: null,             // last folder scan: what still needs doing
   excluded: new Set(),    // folder-mode: unfinished files the user unticked
   included: new Set(),    // folder-mode: finished files the user asked to redo
+  paused: false,          // the GPU worker is holding between segments
   fileSettings: null,     // path of the file open on the Settings panel's 2nd tab
   fileDirty: false,       // …and whether it has edits that are not written yet
   translate: { contentId: null, name: "" },
@@ -1617,6 +1618,8 @@ function connectEvents() {
     if (payload.type === "hello") {
       state.jobs.clear();
       for (const job of payload.jobs) state.jobs.set(job.id, job);
+      // The worker may have been paused before this page existed.
+      setPaused(payload.paused);
       renderJobs();
       refreshTunePicker();
     } else if (payload.type === "job") {
@@ -1665,7 +1668,7 @@ const STAGE_LABELS = {
 // The file being worked on, then what is waiting, then what is finished. With a
 // queue of fifty the one thing you want to watch was somewhere in the middle,
 // and it moved every time another file finished.
-const JOB_ORDER = { running: 0, queued: 1, done: 2, failed: 2, cancelled: 2 };
+const JOB_ORDER = { running: 0, paused: 0, queued: 1, done: 2, failed: 2, cancelled: 2 };
 
 function renderJobs() {
   const jobs = Array.from(state.jobs.values());
@@ -1679,6 +1682,9 @@ function renderJobs() {
   jobs.sort((a, b) =>
     (JOB_ORDER[a.status] ?? 3) - (JOB_ORDER[b.status] ?? 3)
     || order.get(a.id) - order.get(b.id));
+
+  const busy = jobs.some((j) => ["queued", "running", "paused"].includes(j.status));
+  $("#btn-pause").classList.toggle("hidden", !busy && !state.paused);
 
   $("#jobs").innerHTML = jobs.map((job) => {
     const pct = Math.round((job.progress || 0) * 100);
@@ -1697,8 +1703,10 @@ function renderJobs() {
     const translateBtn = job.status === "done" && job.content_id
       ? `<button class="btn tiny" data-translate="${job.content_id}"
            data-name="${escapeHtml(job.name)}">Translate…</button>` : "";
-    const cancel = job.status === "queued"
-      ? `<button class="btn ghost tiny" data-cancel="${job.id}">Cancel</button>` : "";
+    // Stopping the file being processed is the case people actually need: a
+    // 40-minute video queued by mistake used to have to finish.
+    const cancel = ["queued", "running", "paused"].includes(job.status)
+      ? `<button class="btn ghost tiny" data-cancel="${job.id}">Stop</button>` : "";
 
     // Notes belong on a good run too: "you asked for Latin script and this
     // language has no romanizer" is exactly the thing that used to happen in
@@ -1732,6 +1740,29 @@ function renderJobs() {
       ${warn}${error}${cloud}${outputs}
     </div>`;
   }).join("");
+}
+
+$("#btn-pause").addEventListener("click", async () => {
+  try {
+    const res = await api("/api/queue/pause", {
+      method: "POST",
+      body: JSON.stringify({ paused: !state.paused }),
+    });
+    setPaused(res.paused);
+    toast(res.paused
+      ? "Paused. The file being processed keeps its progress."
+      : "Running again.", "ok");
+  } catch (err) {
+    toast(`Could not pause: ${err.message}`, "error");
+  }
+});
+
+/** Reflect the worker's state on the button, and remember it for the next click. */
+function setPaused(paused) {
+  state.paused = !!paused;
+  const button = $("#btn-pause");
+  button.textContent = paused ? "Resume" : "Pause";
+  button.classList.toggle("primary", !!paused);
 }
 
 $("#jobs").addEventListener("click", async (event) => {

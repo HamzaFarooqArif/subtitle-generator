@@ -47,6 +47,12 @@ keyboard, or click to pin it. A control with no help text fails the test suite.
 submit. Jobs run one at a time on a single GPU worker (the model loads once and
 stays loaded between jobs), with live per-stage progress streamed over SSE. The
 file being processed is listed first, then what is waiting, then what is done.
+
+**Pause** holds the worker between segments: the file being processed stops where
+it is, keeps its progress, and carries on from there — it does not start over.
+**Stop** applies to a running file too, not only a queued one. Both are
+cooperative rather than a kill: tearing down a decode mid-CUDA-call leaves the
+card in a state the next job inherits, and stopping takes about half a second.
 Finished files, and everything transcribed in earlier sessions, are listed
 underneath with a **Translate…** button.
 

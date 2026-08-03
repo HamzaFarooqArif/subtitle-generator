@@ -149,6 +149,12 @@ class TranslateDefaultRequest(BaseModel):
     target: str = ""
 
 
+class PauseRequest(BaseModel):
+    """Hold the GPU worker without losing the queue."""
+
+    paused: bool
+
+
 class ForgetAllRequest(BaseModel):
     """Deleting every cached transcript is not something to do by accident."""
 
@@ -288,7 +294,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/jobs")
     def list_jobs() -> dict[str, Any]:
-        return {"jobs": queue.list()}
+        return {"jobs": queue.list(), "paused": queue.paused}
 
     def _settings_for(folder: Path, base: dict[str, Any]):
         """Build a per-file (config, translate target, overrides) resolver.
@@ -425,9 +431,25 @@ def create_app() -> FastAPI:
 
     @app.delete("/api/jobs/{job_id}")
     def cancel(job_id: str) -> dict[str, Any]:
+        """Stop a job, whether it is waiting or being processed.
+
+        A running one stops at the next segment boundary rather than being killed:
+        subtitles are written atomically, so nothing half-finished is left behind,
+        and the GPU is not torn down mid-call for the next job to inherit.
+        """
         if not queue.cancel(job_id):
-            raise HTTPException(409, "job is not cancellable (already running or finished)")
+            raise HTTPException(409, "that job has already finished")
         return {"ok": True}
+
+    @app.post("/api/queue/pause")
+    def pause_queue(req: PauseRequest) -> dict[str, Any]:
+        """Hold the worker, or let it go again.
+
+        The file being processed stops where it is and keeps its progress; it
+        continues from there, rather than starting over.
+        """
+        queue.pause() if req.paused else queue.resume()
+        return {"paused": queue.paused}
 
     @app.post("/api/jobs/clear")
     def clear() -> dict[str, Any]:
@@ -439,7 +461,8 @@ def create_app() -> FastAPI:
 
         async def stream():
             try:
-                yield f"data: {json.dumps({'type': 'hello', 'jobs': queue.list()})}\n\n"
+                hello = {"type": "hello", "jobs": queue.list(), "paused": queue.paused}
+                yield f"data: {json.dumps(hello)}\n\n"
                 while True:
                     try:
                         payload = q.get_nowait()

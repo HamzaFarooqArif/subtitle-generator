@@ -882,12 +882,17 @@ def test_stricter_thresholds_suppress_more(client):
         "gating": {"min_mean_word_prob": 0.0, "hard_avg_logprob": -3.0,
                    "hard_no_speech_prob": 1.0, "max_compression_ratio": 5.0},
     }).json()
+    default = client.post(f"/api/result/{content_id}/regate", json={}).json()
     strict = client.post(f"/api/result/{content_id}/regate", json={
         "gating": {"min_mean_word_prob": 0.99},
     }).json()
 
-    assert strict["stats"]["suppressed"] > lenient["stats"]["suppressed"]
-    assert lenient["stats"]["suppressed"] == 0
+    # Ordering, not absolute counts: this runs against whichever transcript
+    # happens to be in work/, and demanding zero suppressions from an unknown
+    # file assumed away the checks these sliders do not control — the repeat-loop
+    # and duplicate-neighbour rules, which fire on any song with a chorus.
+    assert strict["stats"]["suppressed"] > default["stats"]["suppressed"]
+    assert lenient["stats"]["suppressed"] <= default["stats"]["suppressed"]
 
 
 @needs_sidecar
@@ -935,3 +940,33 @@ def test_edits_are_remembered(client, tmp_path):
             edits_file.unlink(missing_ok=True)
         else:
             edits_file.write_text(backup, encoding="utf-8")
+
+
+# --------------------------------------------------------------------------- #
+# stopping and pausing over HTTP
+# --------------------------------------------------------------------------- #
+
+def test_the_queue_reports_whether_it_is_paused(client):
+    assert client.get("/api/jobs").json()["paused"] is False
+
+
+def test_pause_and_resume_round_trip(client):
+    try:
+        assert client.post("/api/queue/pause", json={"paused": True}).json()["paused"]
+        assert client.get("/api/jobs").json()["paused"] is True
+    finally:
+        assert not client.post("/api/queue/pause", json={"paused": False}).json()["paused"]
+
+
+def test_stopping_a_job_that_does_not_exist_is_a_conflict(client):
+    assert client.delete("/api/jobs/nosuchjob").status_code == 409
+
+
+def test_the_page_offers_to_stop_and_to_pause(client):
+    """Neither existed while a file was being processed: a 40-minute video queued
+    by mistake had to finish."""
+    body = client.get("/").text
+    assert 'id="btn-pause"' in body
+    js = client.get("/static/app.js").text
+    assert '"queued", "running", "paused"' in js, "Stop must apply to a running job"
+    assert "/api/queue/pause" in js

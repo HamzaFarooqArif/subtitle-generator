@@ -21,7 +21,17 @@ from ..config import Config
 
 log = logging.getLogger(__name__)
 
-Status = Literal["queued", "running", "done", "failed", "cancelled"]
+Status = Literal["queued", "running", "paused", "done", "failed", "cancelled"]
+
+
+class Cancelled(Exception):
+    """Raised inside the worker when the user stops the file being processed.
+
+    Thrown from the progress callback, which the pipeline calls once per decoded
+    segment — so the decode stops within a second or so, at a point where nothing
+    is half-written. Subtitles are written atomically, so there is no partial file
+    to clean up either.
+    """
 
 STAGES = ("probe", "extract", "detect", "transcribe", "gate", "translate", "write")
 # Rough share of wall time per stage, for a single overall progress number.
@@ -115,6 +125,10 @@ class JobQueue:
         self._worker: threading.Thread | None = None
         self._stop = threading.Event()
         self._cancelled: set[str] = set()
+        # Set means "running". Cleared holds the worker between segments, so a
+        # pause stops the file being processed rather than only the queue.
+        self._resume = threading.Event()
+        self._resume.set()
         self._on_change = on_change
         # The loaded pipeline, kept alive between jobs when options match.
         self._pipeline = None
@@ -141,19 +155,58 @@ class JobQueue:
             return self._jobs.get(job_id)
 
     def cancel(self, job_id: str) -> bool:
-        """Cancel a queued job. A running job finishes — killing it mid-decode
-        would leave the GPU in an uncertain state for the next one."""
+        """Stop a job, queued or running.
+
+        A queued job is dropped outright. A running one is asked to stop and does
+        so at the next segment boundary — cooperative rather than killed, because
+        tearing down a decode mid-CUDA-call is what leaves the card in a state the
+        next job inherits.
+        """
         with self._lock:
             job = self._jobs.get(job_id)
             if not job:
                 return False
+            if job.status in ("done", "failed", "cancelled"):
+                return False
+            self._cancelled.add(job_id)
             if job.status == "queued":
                 job.status = "cancelled"
                 job.finished = time.time()
-                self._cancelled.add(job_id)
                 self._notify(job)
-                return True
-            return False
+            else:
+                # Leave the status alone: the worker sets it when it actually
+                # stops, so the UI never claims it stopped before it has.
+                self._resume.set()      # a paused job has to wake up to notice
+            return True
+
+    # ------------------------------------------------------------------ pause
+
+    def pause(self) -> None:
+        """Hold the worker. The file being processed stops where it is, keeps its
+        progress, and continues from there on resume."""
+        self._resume.clear()
+
+    def resume(self) -> None:
+        self._resume.set()
+
+    @property
+    def paused(self) -> bool:
+        return not self._resume.is_set()
+
+    def _hold(self, job: Job | None = None) -> None:
+        """Block while paused. Called between segments, so a pause takes effect
+        inside a file rather than only between files."""
+        if self._resume.is_set():
+            return
+        if job is not None and job.status == "running":
+            job.status = "paused"
+            self._notify(job)
+        while not self._resume.wait(timeout=0.5):
+            if self._stop.is_set():
+                return
+        if job is not None and job.status == "paused":
+            job.status = "running"
+            self._notify(job)
 
     def active_paths(self) -> list[str]:
         """Sources of jobs not yet finished.
@@ -165,7 +218,7 @@ class JobQueue:
             return [
                 str(self._jobs[i].source)
                 for i in self._order
-                if self._jobs[i].status in ("queued", "running")
+                if self._jobs[i].status in ("queued", "running", "paused")
             ]
 
     def clear_finished(self) -> int:
@@ -181,6 +234,7 @@ class JobQueue:
 
     def shutdown(self) -> None:
         self._stop.set()
+        self._resume.set()     # a paused worker has to wake up to shut down
         self._pending.put("")  # unblock the worker
         if self._worker:
             self._worker.join(timeout=10)
@@ -245,6 +299,9 @@ class JobQueue:
 
             if not job_id or self._stop.is_set():
                 break
+            self._hold()          # paused: do not start the next file either
+            if self._stop.is_set():
+                break
             with self._lock:
                 job = self._jobs.get(job_id)
                 if job is None or job_id in self._cancelled:
@@ -262,6 +319,12 @@ class JobQueue:
 
         def progress(stage: str, fraction: float) -> None:
             nonlocal last_push
+            # The pipeline calls this once per decoded segment, which makes it the
+            # natural place to stop or hold: often enough to feel immediate, and
+            # always between units of work rather than inside one.
+            self._hold(job)
+            if job.id in self._cancelled:
+                raise Cancelled()
             job.stage = stage
             job.stage_fraction = fraction
             job.progress = _overall(stage, fraction)
@@ -279,6 +342,13 @@ class JobQueue:
                 overwrite=bool(job.options.get("overwrite")),
                 progress=progress,
             )
+        except Cancelled:
+            log.info("job %s stopped on request", job.id)
+            job.status = "cancelled"
+            job.stage = ""
+            job.finished = time.time()
+            self._notify(job)
+            return
         except Exception as exc:
             log.exception("job %s failed", job.id)
             job.status = "failed"
